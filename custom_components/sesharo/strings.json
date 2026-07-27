@@ -22,19 +22,43 @@
   "options": {
     "step": {
       "init": {
-        "title": "Sesharo options",
-        "description": "Presets (temperature, humidity, CO₂, PM2.5, power, energy, presence/door/motion) are sent automatically. Add a custom mapping by entering an entity + a signal slug. Current custom mappings: {current}",
+        "title": "Sesharo",
+        "description": "Presets (temperature, humidity, CO₂, PM2.5, power, energy, presence/door/motion) are sent automatically when enabled.\n\nCurrent custom mappings:\n{current}",
+        "menu_options": {
+          "settings": "Push settings (interval, presets)",
+          "add_mapping": "Add a custom mapping",
+          "remove_mappings": "Remove custom mappings",
+          "finish": "Save & close"
+        }
+      },
+      "settings": {
+        "title": "Push settings",
         "data": {
           "interval": "Push interval (seconds)",
-          "presets_enabled": "Auto-send preset signals",
-          "remove": "Remove custom mappings",
-          "entity_id": "Custom: entity ID (e.g. sensor.washer_power)",
-          "signal": "Custom: signal slug (e.g. washer_power)",
-          "kind": "Custom: kind (metric or event)",
-          "unit": "Custom: unit (metrics only)",
-          "display_name": "Custom: display name"
+          "presets_enabled": "Auto-send preset signals"
+        }
+      },
+      "add_mapping": {
+        "title": "Add a custom mapping",
+        "description": "Map a Home Assistant entity to a Sesharo signal. The signal slug must be lowercase letters, numbers and underscores (e.g. washer_power). Metrics are numeric readings; events are discrete state changes.",
+        "data": {
+          "entity_id": "Entity",
+          "signal": "Signal slug",
+          "kind": "Kind (metric or event)",
+          "unit": "Unit (metrics only, e.g. watts)",
+          "display_name": "Display name (optional)"
+        }
+      },
+      "remove_mappings": {
+        "title": "Remove custom mappings",
+        "data": {
+          "remove": "Select mappings to remove"
         }
       }
+    },
+    "error": {
+      "entity_required": "Pick an entity to map.",
+      "invalid_signal": "Signal must be lowercase letters, numbers and underscores (max 49 characters)."
     }
   }
 }

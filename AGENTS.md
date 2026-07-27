@@ -26,9 +26,11 @@ Ingest is idempotent server-side (see the api-contract). **Auth = a Sesharo Pers
 | `const.py` | `DOMAIN`, config keys, the preset catalog (`PRESET_METRICS` by `device_class`, `PRESET_EVENTS`, `PERSON_EVENT_CATEGORY`), defaults. |
 | `api.py` | `SesharoClient` — async POST via HA's shared aiohttp session; `async_validate()` sends an empty batch; raises `SesharoAuthError` (401/403/404) vs `SesharoApiError`. |
 | `coordinator.py` | `SesharoPusher` — maps entities (preset by `device_class` + custom), snapshots readings each interval, buffers events on `EVENT_STATE_CHANGED`, flushes in one POST (final flush on unload). `_to_canonical()` converts preset units (°F→°C, Wh→kWh, kW→W). |
-| `config_flow.py` | Setup (base URL / user ID / PAT, validated) + Options (interval, presets toggle, add/remove custom `entity → signal` mappings). |
+| `config_flow.py` | Setup (base URL / user ID / PAT, validated) + a **menu-based Options flow** (`async_show_menu`): *Push settings* (interval/presets), *Add a custom mapping* (loops back to the menu, so any number of mappings can be added in one session; entity picked via `EntitySelector`, slug validated against `_SLUG_RE`, replace-by-entity), *Remove custom mappings* (`cv.multi_select`), *Save & close* (only `async_step_finish` persists — the working copy `self._options` accumulates across sub-steps). |
 | `__init__.py` | `async_setup_entry` / `async_unload_entry`; reloads on options change. |
-| `manifest.json` / `strings.json` / `translations/en.json` / `hacs.json` | HA + HACS metadata + UI strings. |
+| `manifest.json` / `strings.json` / `translations/en.json` / `hacs.json` | HA + HACS metadata + UI strings. `strings.json` is the source; keep `translations/en.json` an exact copy. |
+| `images/logo.png` | Sesharo mark shown on the HACS page (embedded in README via a raw GitHub URL). |
+| `brands/icon.png` (256×256) / `brands/logo.png` | Brand-ready assets to submit to `home-assistant/brands` → `custom_integrations/sesharo/` so the icon shows in HA's *Devices & Services* list (the only source HA reads icons from). |
 
 ## Presets → Sesharo signals
 
@@ -48,6 +50,10 @@ signal slug (metric or event); custom metrics create a user-owned type in Seshar
 
 ## Validation / status
 
-Built 2026-07-26. **Syntax + JSON validated only.** Before shipping, run on a real HA instance:
-`hassfest` validation, config-flow round-trip, and confirm data lands in Sesharo. HA is not installed
-in the dev sandbox, so runtime behaviour (state-change capture, options reload) is **unverified**.
+Built 2026-07-26. Live on a real HA instance since 2026-07-27 — metrics confirmed landing in Sesharo
+(temperature/humidity/CO₂/power/energy). **2026-07-27 fixes:** the options flow 500'd on open (a bare
+`vol.All(list)` for the removal picker couldn't be serialized when no custom mappings existed) — fixed
+and rebuilt as the menu flow above; its state machine (menu loop, add/replace/validate, remove, finish,
+empty-remove bounce) is verified off-device via a stubbed-HA harness. Still **unverified on-device:**
+`hassfest`, the options round-trip in the real UI, `EntitySelector` rendering, and event capture. Note
+HA reads the packaged copy, not `~/dev` — update via HACS (or copy files over) + restart to pick up changes.

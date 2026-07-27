@@ -1,4 +1,8 @@
-# Sesharo for Home Assistant
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Sesharo/sesharo-homeassistant/main/images/logo.png" alt="Sesharo" width="128" height="128" />
+</p>
+
+<h1 align="center">Sesharo for Home Assistant</h1>
 
 A first-party [Home Assistant](https://www.home-assistant.io/) custom integration that pushes selected
 Home Assistant data into [Sesharo](https://sesharo.com), where it becomes health-metrics and timeline
@@ -60,3 +64,7 @@ custom entity → signal mappings.
 
 - No entities are created in Home Assistant — this integration only *exports* data.
 - The token grants API access to your Sesharo account; treat it like a password.
+- **Logo / icon:** the logo above renders on the HACS page from `images/logo.png`. To make the Sesharo
+  icon appear in Home Assistant's own *Devices & Services* list, the brand-ready assets in `brands/`
+  (`icon.png` 256×256, `logo.png`) must be submitted to the [home-assistant/brands](https://github.com/home-assistant/brands)
+  repo under `custom_integrations/sesharo/` — that repo is the only source HA reads integration icons from.
