@@ -6,6 +6,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import SesharoApiError, SesharoAuthError, SesharoClient
@@ -105,18 +106,22 @@ class SesharoOptionsFlow(config_entries.OptionsFlow):
             c[CONF_CUSTOM_ENTITY]: f"{c[CONF_CUSTOM_ENTITY]} → {c[CONF_CUSTOM_SIGNAL]} ({c[CONF_CUSTOM_KIND]})"
             for c in custom
         }
-        schema = vol.Schema({
+        schema_dict: dict[Any, Any] = {
             vol.Required(CONF_INTERVAL, default=options.get(CONF_INTERVAL, DEFAULT_INTERVAL)): int,
             vol.Required(CONF_PRESETS_ENABLED, default=options.get(CONF_PRESETS_ENABLED, True)): bool,
-            vol.Optional("remove", default=[]): vol.All(
-                [vol.In(existing_labels)] if existing_labels else list,
-            ),
+        }
+        # Only offer the removal picker when there is something to remove — a bare/empty
+        # validator here can't be serialized to the frontend and 500s the options flow.
+        if existing_labels:
+            schema_dict[vol.Optional("remove", default=[])] = cv.multi_select(existing_labels)
+        schema_dict.update({
             vol.Optional(CONF_CUSTOM_ENTITY, default=""): str,
             vol.Optional(CONF_CUSTOM_SIGNAL, default=""): str,
             vol.Optional(CONF_CUSTOM_KIND, default=KIND_METRIC): vol.In([KIND_METRIC, KIND_EVENT]),
             vol.Optional(CONF_CUSTOM_UNIT, default=""): str,
             vol.Optional(CONF_CUSTOM_NAME, default=""): str,
         })
+        schema = vol.Schema(schema_dict)
         return self.async_show_form(
             step_id="init",
             data_schema=schema,
