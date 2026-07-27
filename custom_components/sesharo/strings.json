@@ -1,0 +1,40 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Sesharo",
+        "description": "Push selected Home Assistant data into Sesharo. Create a Personal Access Token in the Sesharo app (Settings → Developer) and paste it below.",
+        "data": {
+          "base_url": "Sesharo API base URL",
+          "user_id": "Sesharo user ID",
+          "token": "Personal Access Token"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Sesharo rejected the token or user ID. Double-check both.",
+      "cannot_connect": "Couldn't reach the Sesharo API at that URL."
+    },
+    "abort": {
+      "already_configured": "This Sesharo account is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Sesharo options",
+        "description": "Presets (temperature, humidity, CO₂, PM2.5, power, energy, presence/door/motion) are sent automatically. Add a custom mapping by entering an entity + a signal slug. Current custom mappings: {current}",
+        "data": {
+          "interval": "Push interval (seconds)",
+          "presets_enabled": "Auto-send preset signals",
+          "remove": "Remove custom mappings",
+          "entity_id": "Custom: entity ID (e.g. sensor.washer_power)",
+          "signal": "Custom: signal slug (e.g. washer_power)",
+          "kind": "Custom: kind (metric or event)",
+          "unit": "Custom: unit (metrics only)",
+          "display_name": "Custom: display name"
+        }
+      }
+    }
+  }
+}

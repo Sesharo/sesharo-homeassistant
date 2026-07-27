@@ -1,0 +1,12 @@
+{
+  "domain": "sesharo",
+  "name": "Sesharo",
+  "codeowners": ["@jdppettit"],
+  "config_flow": true,
+  "documentation": "https://github.com/Sesharo/sesharo-homeassistant",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/Sesharo/sesharo-homeassistant/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}
