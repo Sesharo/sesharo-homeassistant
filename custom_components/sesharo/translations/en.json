@@ -26,9 +26,27 @@
         "description": "Presets (temperature, humidity, CO₂, PM2.5, power, energy, presence/door/motion) are sent automatically when enabled.\n\nCurrent custom mappings:\n{current}",
         "menu_options": {
           "settings": "Push settings (interval, presets)",
+          "discover": "Suggest entities to track",
           "add_mapping": "Add a custom mapping",
           "remove_mappings": "Remove custom mappings",
           "finish": "Save & close"
+        }
+      },
+      "discover": {
+        "title": "Suggest entities to track",
+        "description": "Sesharo scanned your entities and found these that aren't already covered by a preset or an existing mapping. Tick the ones you'd like to track — the signal name, kind and unit are filled in automatically (you can rename them later under Add a custom mapping).",
+        "data": {
+          "add": "Entities to track"
+        }
+      },
+      "configure_mapping": {
+        "title": "Configure mapping",
+        "description": "Mapping {entity}. The signal slug, kind and unit were guessed from the entity — adjust if needed. The slug must be lowercase letters, numbers and underscores (e.g. washer_power).",
+        "data": {
+          "signal": "Signal slug",
+          "kind": "Kind (metric or event)",
+          "unit": "Unit (metrics only, e.g. watts)",
+          "display_name": "Display name (optional)"
         }
       },
       "settings": {
@@ -40,13 +58,9 @@
       },
       "add_mapping": {
         "title": "Add a custom mapping",
-        "description": "Map a Home Assistant entity to a Sesharo signal. The signal slug must be lowercase letters, numbers and underscores (e.g. washer_power). Metrics are numeric readings; events are discrete state changes.",
+        "description": "Pick the Home Assistant entity to export. The next screen pre-fills the Sesharo signal name, kind and unit from it — you just confirm or tweak.",
         "data": {
-          "entity_id": "Entity",
-          "signal": "Signal slug",
-          "kind": "Kind (metric or event)",
-          "unit": "Unit (metrics only, e.g. watts)",
-          "display_name": "Display name (optional)"
+          "entity_id": "Entity"
         }
       },
       "remove_mappings": {

@@ -11,6 +11,7 @@ from homeassistant.helpers import config_validation as cv, selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import SesharoApiError, SesharoAuthError, SesharoClient
+from .discovery import discover_candidates, suggest_mapping
 from .const import (
     CONF_BASE_URL,
     CONF_CUSTOM,
@@ -94,6 +95,27 @@ class SesharoOptionsFlow(config_entries.OptionsFlow):
             CONF_PRESETS_ENABLED: opts.get(CONF_PRESETS_ENABLED, True),
             CONF_CUSTOM: [dict(c) for c in opts.get(CONF_CUSTOM, [])],
         }
+        # The entity picked in add_mapping step 1, carried into the pre-filled step 2.
+        self._pending_entity: str | None = None
+
+    # ── helpers ───────────────────────────────────────────────────────────
+    def _add_mapping(self, entity: str, signal: str, kind: str, unit: str, name: str) -> None:
+        """Replace any existing mapping for ``entity`` and append the new one."""
+        custom = [c for c in self._options[CONF_CUSTOM] if c[CONF_CUSTOM_ENTITY] != entity]
+        custom.append({
+            CONF_CUSTOM_ENTITY: entity,
+            CONF_CUSTOM_SIGNAL: signal,
+            CONF_CUSTOM_KIND: kind,
+            CONF_CUSTOM_UNIT: unit,
+            CONF_CUSTOM_NAME: name,
+        })
+        self._options[CONF_CUSTOM] = custom
+
+    def _mapped_entities(self) -> set[str]:
+        return {c[CONF_CUSTOM_ENTITY] for c in self._options[CONF_CUSTOM]}
+
+    def _mapped_signals(self) -> set[str]:
+        return {c[CONF_CUSTOM_SIGNAL] for c in self._options[CONF_CUSTOM]}
 
     def _summary(self) -> str:
         custom = self._options.get(CONF_CUSTOM, [])
@@ -107,7 +129,7 @@ class SesharoOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
         return self.async_show_menu(
             step_id="init",
-            menu_options=["settings", "add_mapping", "remove_mappings", "finish"],
+            menu_options=["settings", "discover", "add_mapping", "remove_mappings", "finish"],
             description_placeholders={"current": self._summary()},
         )
 
@@ -122,37 +144,89 @@ class SesharoOptionsFlow(config_entries.OptionsFlow):
         })
         return self.async_show_form(step_id="settings", data_schema=schema)
 
+    async def async_step_discover(self, user_input: dict[str, Any] | None = None):
+        """Scan HA for trackable entities not already covered, and bulk-add the chosen ones."""
+        candidates = discover_candidates(
+            self.hass.states.async_all(),
+            self._mapped_entities(),
+            self._mapped_signals(),
+            presets_enabled=self._options[CONF_PRESETS_ENABLED],
+        )
+        if not candidates:  # nothing to suggest — bounce back with a note
+            return await self.async_step_init()
+        by_entity = {c[CONF_CUSTOM_ENTITY]: c for c in candidates}
+        if user_input is not None:
+            for entity in user_input.get("add", []):
+                c = by_entity.get(entity)
+                if c is not None:
+                    self._add_mapping(
+                        entity, c[CONF_CUSTOM_SIGNAL], c[CONF_CUSTOM_KIND],
+                        c[CONF_CUSTOM_UNIT], c[CONF_CUSTOM_NAME],
+                    )
+            return await self.async_step_init()
+        labels = {
+            c[CONF_CUSTOM_ENTITY]:
+                f"{c[CONF_CUSTOM_ENTITY]} → {c[CONF_CUSTOM_SIGNAL]} ({c[CONF_CUSTOM_KIND]})"
+            for c in candidates
+        }
+        schema = vol.Schema({vol.Required("add", default=[]): cv.multi_select(labels)})
+        return self.async_show_form(step_id="discover", data_schema=schema)
+
     async def async_step_add_mapping(self, user_input: dict[str, Any] | None = None):
+        """Step 1 of adding a mapping: pick the entity. Step 2 pre-fills from it."""
         errors: dict[str, str] = {}
         if user_input is not None:
             entity = (user_input.get(CONF_CUSTOM_ENTITY) or "").strip()
-            signal = (user_input.get(CONF_CUSTOM_SIGNAL) or "").strip().lower()
             if not entity:
                 errors[CONF_CUSTOM_ENTITY] = "entity_required"
+            else:
+                self._pending_entity = entity
+                return await self.async_step_configure_mapping()
+        schema = vol.Schema({vol.Required(CONF_CUSTOM_ENTITY): selector.EntitySelector()})
+        return self.async_show_form(step_id="add_mapping", data_schema=schema, errors=errors)
+
+    async def async_step_configure_mapping(self, user_input: dict[str, Any] | None = None):
+        """Step 2: signal/kind/unit/name pre-filled from the picked entity; user confirms or tweaks."""
+        entity = self._pending_entity
+        if entity is None:  # defensive — shouldn't be reachable without step 1
+            return await self.async_step_add_mapping()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            signal = (user_input.get(CONF_CUSTOM_SIGNAL) or "").strip().lower()
             if not _SLUG_RE.match(signal):
                 errors[CONF_CUSTOM_SIGNAL] = "invalid_signal"
             if not errors:
-                # Replace any existing mapping for the same entity, then append the new one.
-                custom = [c for c in self._options[CONF_CUSTOM] if c[CONF_CUSTOM_ENTITY] != entity]
-                custom.append({
-                    CONF_CUSTOM_ENTITY: entity,
-                    CONF_CUSTOM_SIGNAL: signal,
-                    CONF_CUSTOM_KIND: user_input.get(CONF_CUSTOM_KIND, KIND_METRIC),
-                    CONF_CUSTOM_UNIT: (user_input.get(CONF_CUSTOM_UNIT) or "").strip(),
-                    CONF_CUSTOM_NAME: (user_input.get(CONF_CUSTOM_NAME) or "").strip(),
-                })
-                self._options[CONF_CUSTOM] = custom
+                self._add_mapping(
+                    entity, signal,
+                    user_input.get(CONF_CUSTOM_KIND, KIND_METRIC),
+                    (user_input.get(CONF_CUSTOM_UNIT) or "").strip(),
+                    (user_input.get(CONF_CUSTOM_NAME) or "").strip(),
+                )
+                self._pending_entity = None
                 return await self.async_step_init()
+
+        # Derive defaults from the live entity state (falls back to bare guesses if it's gone).
+        state = self.hass.states.get(entity)
+        suggestion = suggest_mapping(entity, state) if state is not None else None
+        defaults = suggestion or {
+            CONF_CUSTOM_SIGNAL: "", CONF_CUSTOM_KIND: KIND_METRIC,
+            CONF_CUSTOM_UNIT: "", CONF_CUSTOM_NAME: "",
+        }
+        # If the user just failed validation, keep what they typed.
+        if user_input is not None:
+            defaults = {**defaults, **{k: v for k, v in user_input.items()}}
         schema = vol.Schema({
-            vol.Required(CONF_CUSTOM_ENTITY): selector.EntitySelector(),
-            vol.Required(CONF_CUSTOM_SIGNAL): str,
-            vol.Required(CONF_CUSTOM_KIND, default=KIND_METRIC): selector.SelectSelector(
+            vol.Required(CONF_CUSTOM_SIGNAL, default=defaults[CONF_CUSTOM_SIGNAL]): str,
+            vol.Required(CONF_CUSTOM_KIND, default=defaults[CONF_CUSTOM_KIND]): selector.SelectSelector(
                 selector.SelectSelectorConfig(options=[KIND_METRIC, KIND_EVENT])
             ),
-            vol.Optional(CONF_CUSTOM_UNIT, default=""): str,
-            vol.Optional(CONF_CUSTOM_NAME, default=""): str,
+            vol.Optional(CONF_CUSTOM_UNIT, default=defaults[CONF_CUSTOM_UNIT]): str,
+            vol.Optional(CONF_CUSTOM_NAME, default=defaults[CONF_CUSTOM_NAME]): str,
         })
-        return self.async_show_form(step_id="add_mapping", data_schema=schema, errors=errors)
+        return self.async_show_form(
+            step_id="configure_mapping", data_schema=schema, errors=errors,
+            description_placeholders={"entity": entity},
+        )
 
     async def async_step_remove_mappings(self, user_input: dict[str, Any] | None = None):
         custom = self._options[CONF_CUSTOM]
