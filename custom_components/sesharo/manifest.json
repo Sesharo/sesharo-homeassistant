@@ -7,6 +7,6 @@
   "integration_type": "service",
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/Sesharo/sesharo-homeassistant/issues",
-  "requirements": [],
+  "requirements": ["sentry-sdk==2.63.0"],
   "version": "0.1.0"
 }

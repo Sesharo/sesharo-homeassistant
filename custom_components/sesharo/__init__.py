@@ -10,11 +10,16 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import SesharoClient
 from .const import CONF_BASE_URL, CONF_TOKEN, CONF_USER_ID, DOMAIN
 from .coordinator import SesharoPusher
+from .sentry import init_sentry
 
 _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    # Opt-in, off by default: no-op unless SESHARO_SENTRY_DSN is set on the host.
+    # Runs in an executor because sentry-sdk init imports + starts a transport.
+    await hass.async_add_executor_job(init_sentry)
+
     client = SesharoClient(
         async_get_clientsession(hass),
         entry.data[CONF_BASE_URL],

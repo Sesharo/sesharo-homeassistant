@@ -47,7 +47,25 @@ signal slug (metric or event); custom metrics create a user-owned type in Seshar
 - `signal`/`category` slugs must match `^[a-z0-9][a-z0-9_]{0,48}$` (the backend 422s otherwise).
 - Add a preset by extending `PRESET_METRICS` / `PRESET_EVENTS` in `const.py` **and** seeding the
   matching metric type in `sesharo-api` (migration) if it's a metric.
-- Keep the component dependency-free (`requirements: []`) — use HA's bundled aiohttp/voluptuous.
+- Keep the runtime lean — use HA's bundled aiohttp/voluptuous. The only declared
+  requirement is `sentry-sdk` (error reporting, see below), which stays dormant unless
+  a DSN env var is set; don't add others without a strong reason.
+
+## Error reporting (Sentry)
+
+`sentry.py` provides **opt-in, off-by-default** crash reporting. Because the component
+runs inside end users' Home Assistant hosts, `init_sentry()` is a **no-op unless the
+`SESHARO_SENTRY_DSN` environment variable is set** on the host (mirrors the env-gated
+guard in `sesharo-api/app/telemetry.py`). It's called once from `async_setup_entry` via
+an executor (sentry-sdk init is blocking).
+
+Even when enabled, a `before_send` filter drops every event that does **not** originate
+from `custom_components.sesharo` (checked against the logger name and stack-frame
+modules), so we never capture the user's unrelated HA errors. `send_default_pii=False`;
+no trace sampling. Optional `SESHARO_SENTRY_ENVIRONMENT` overrides the environment tag
+(default `production`). `sentry-sdk` is pinned in `manifest.json` (`==2.63.0`, matching
+the backend) so HACS installs it; with no DSN set it just sits idle. Sentry project:
+`sesharo-homeassistant` (org `sesharo`).
 
 ## Tests
 
