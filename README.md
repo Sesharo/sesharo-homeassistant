@@ -42,6 +42,23 @@ Authorization: Bearer <Personal Access Token>
 
 Ingest is **idempotent** — retries and overlaps are de-duplicated server-side, so nothing double-counts.
 
+## The Sesharo panel
+
+After setup, a **Sesharo** panel appears in the Home Assistant sidebar. It's the main place to manage
+the integration:
+
+- **Push health** at a glance — connection, last/next push, failure count, and a **Push now** button.
+- The **mapping table** — every entity → signal mapping with its live last-sent value; add one inline
+  without leaving the page.
+- **Presets** — a master switch plus a per-signal toggle for each of the nine curated presets.
+- **Worth tracking** — one-tap suggestions for entities no preset covers, with names and units filled
+  in for you.
+- When adding a mapping you can send an entity into a **brand-new signal** or one you **already track
+  in Sesharo** (your phone, another integration, or manual logs) so the readings join it — units are
+  matched or converted automatically.
+
+The integration's **Configure** (Options) menu still works as a text-only fallback.
+
 ## Installation (HACS)
 
 1. HACS → Integrations → ⋮ → **Custom repositories** → add this repo, category **Integration**.

@@ -23,7 +23,7 @@
     "step": {
       "init": {
         "title": "Sesharo",
-        "description": "Presets (temperature, humidity, CO₂, PM2.5, power, energy, presence/door/motion) are sent automatically when enabled.\n\nCurrent custom mappings:\n{current}",
+        "description": "Manage mappings, presets and push health visually in the Sesharo panel in the sidebar — this menu is a text-only fallback.\n\nPresets (temperature, humidity, CO₂, PM2.5, power, energy, presence/door/motion) are sent automatically when enabled.\n\nCurrent custom mappings:\n{current}",
         "menu_options": {
           "settings": "Push settings (interval, presets)",
           "discover": "Suggest entities to track",
