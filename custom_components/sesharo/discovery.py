@@ -148,13 +148,17 @@ def discover_candidates(
     ranked.sort(key=lambda pair: pair[0])
     candidates = [candidate for _, candidate in ranked]
 
-    # De-dup signals across the batch + against existing mappings.
+    # De-dup signals across the batch + against existing mappings. The disambiguating suffix must
+    # fit within slugify's 49-char cap, so trim the base to leave room for it. Otherwise a base at
+    # or above 49 chars truncates straight back to itself every iteration, `signal` never changes,
+    # and this loop spins forever — freezing the event loop, since ws_suggestions is a @callback.
     for candidate in candidates:
         base = candidate[CONF_CUSTOM_SIGNAL]
         signal = base
         n = 2
         while signal in used_signals:
-            signal = slugify_signal(f"{base}_{n}")
+            suffix = f"_{n}"
+            signal = f"{base[: 49 - len(suffix)]}{suffix}"
             n += 1
         candidate[CONF_CUSTOM_SIGNAL] = signal
         used_signals.add(signal)

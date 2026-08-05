@@ -4,6 +4,25 @@ All notable changes to the Sesharo Home Assistant integration. Versions match `m
 section for the current version is what `make release` publishes to GitHub Releases (and HACS renders
 as the update changelog).
 
+## v0.2.1 — Fix a panel hang that froze Home Assistant
+
+A **critical fix** for anyone on v0.2.0. Opening the panel's *add a mapping* entity suggestions could
+**freeze all of Home Assistant** — the UI would drop to "loading data / failed to connect" until the
+watchdog restarted core.
+
+### Fixed
+
+- **Infinite loop in entity discovery.** When a suggested signal slug was already ~49 characters and
+  collided with an existing one, the de-duplication suffix (`_2`, `_3`, …) was truncated straight back
+  to the original by the 49-char slug cap, so the loop never terminated. The disambiguating suffix now
+  always fits within the cap, guaranteeing termination. Added a timeout-guarded regression test.
+
+### Hardened
+
+- **Suggestions scan moved off the event loop.** The `suggestions` WebSocket command now snapshots
+  states on the loop and runs the scan in an executor, so a large entity registry can never block
+  Home Assistant — defence-in-depth beside the termination fix.
+
 ## v0.2.0 — The Sesharo panel
 
 This release adds a proper **Sesharo panel** to the Home Assistant sidebar. Everything you could do

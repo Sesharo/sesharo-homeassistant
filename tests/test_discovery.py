@@ -156,6 +156,38 @@ def test_discover_dedups_colliding_signals():
     assert "power" not in signals  # avoided the existing mapping's signal
 
 
+def test_discover_long_colliding_signal_terminates():
+    """Regression: a >=49-char base slug that collides must not spin forever.
+
+    slugify_signal caps at 49 chars, so the old ``slugify_signal(f"{base}_{n}")`` disambiguator got
+    truncated straight back to ``base`` — an infinite loop that froze the HA event loop (the WS
+    ``suggestions`` handler is a @callback). A SIGALRM guard turns a regression back into a failing
+    test instead of a hung run.
+    """
+    import signal as _signal
+
+    long_object_id = "a" * 49  # slugifies to exactly 49 chars → suffix can't fit under the cap
+    states = [
+        FakeState(f"sensor.{long_object_id}", "1", friendly_name="A"),
+        FakeState(f"sensor.{long_object_id}", "2", friendly_name="B"),  # same base → collision
+    ]
+
+    def _timeout(_signum, _frame):
+        raise AssertionError("discover_candidates did not terminate (infinite loop regression)")
+
+    old = _signal.signal(_signal.SIGALRM, _timeout)
+    _signal.alarm(5)
+    try:
+        cands = discover_candidates(states, set(), {long_object_id}, presets_enabled=True)
+    finally:
+        _signal.alarm(0)
+        _signal.signal(_signal.SIGALRM, old)
+
+    signals = [c[CONF_CUSTOM_SIGNAL] for c in cands]
+    assert len(set(signals)) == len(signals)  # unique despite the collision
+    assert all(len(s) <= 49 for s in signals)  # still valid slugs
+
+
 def test_discover_recognized_class_ranked_first():
     states = [
         FakeState("sensor.zzz_no_class", "1", friendly_name="No Class"),

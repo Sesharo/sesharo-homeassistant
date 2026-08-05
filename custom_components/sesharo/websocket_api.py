@@ -150,8 +150,8 @@ async def ws_list_signals(hass, connection, msg) -> None:
 @websocket_api.websocket_command(
     {vol.Required("type"): "sesharo/suggestions", vol.Optional("entry_id"): str}
 )
-@callback
-def ws_suggestions(hass, connection, msg) -> None:
+@websocket_api.async_response
+async def ws_suggestions(hass, connection, msg) -> None:
     entry, _ = _resolve(hass, msg)
     if entry is None:
         connection.send_error(msg["id"], "not_found", "No Sesharo integration configured")
@@ -159,11 +159,15 @@ def ws_suggestions(hass, connection, msg) -> None:
     opts = entry.options
     mapped_entities = {c[CONF_CUSTOM_ENTITY] for c in opts.get(CONF_CUSTOM, []) or []}
     mapped_signals = {c[CONF_CUSTOM_SIGNAL] for c in opts.get(CONF_CUSTOM, []) or []}
-    candidates = discover_candidates(
-        hass.states.async_all(),
-        mapped_entities,
-        mapped_signals,
-        presets_enabled=opts.get(CONF_PRESETS_ENABLED, True),
+    # Snapshot the states on the event loop, then run the (potentially large) scan in an executor so
+    # a big entity registry can never block the loop — defence-in-depth beside the termination fix in
+    # discover_candidates. State objects are immutable snapshots, so they're safe to read off-thread.
+    states = hass.states.async_all()
+    presets_enabled = opts.get(CONF_PRESETS_ENABLED, True)
+    candidates = await hass.async_add_executor_job(
+        lambda: discover_candidates(
+            states, mapped_entities, mapped_signals, presets_enabled=presets_enabled
+        )
     )
     connection.send_result(msg["id"], {"candidates": candidates})
 
