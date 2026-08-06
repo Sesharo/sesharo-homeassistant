@@ -37,10 +37,12 @@ from .const import (
     CONF_CUSTOM_TARGET_UNIT,
     CONF_CUSTOM_UNIT,
     CONF_INTERVAL,
+    CONF_PRESET_CAPS,
     CONF_PRESET_DISABLED,
     CONF_PRESET_EXCLUDED,
     CONF_PRESETS_ENABLED,
     DEFAULT_INTERVAL,
+    DEFAULT_PRESET_ENTITY_CAP,
     KIND_METRIC,
     PERSON_EVENT_CATEGORY,
     PRESET_EVENTS,
@@ -77,6 +79,8 @@ class SesharoPusher:
         self._preset_disabled: set[str] = set(options.get(CONF_PRESET_DISABLED, []) or [])
         # Individual preset-matched entities the user opted out of (preset stays on for the rest).
         self._preset_excluded: set[str] = set(options.get(CONF_PRESET_EXCLUDED, []) or [])
+        # Per-signal cap: {signal slug -> max entities}. Absent -> DEFAULT_PRESET_ENTITY_CAP, <=0 -> off.
+        self._preset_caps: dict[str, int] = dict(options.get(CONF_PRESET_CAPS, {}) or {})
         self._interval = timedelta(seconds=int(self._options.get(CONF_INTERVAL, DEFAULT_INTERVAL)))
 
         # ── push-health state (read by the panel via websocket_api) ──────────
@@ -112,6 +116,26 @@ class SesharoPusher:
             and device_class not in self._preset_disabled
         )
 
+    def _cap_for(self, signal: str) -> int | None:
+        """Max entities allowed to feed ``signal`` — None means no limit."""
+        cap = self._preset_caps.get(signal, DEFAULT_PRESET_ENTITY_CAP)
+        try:
+            cap = int(cap)
+        except (TypeError, ValueError):
+            return DEFAULT_PRESET_ENTITY_CAP
+        return None if cap <= 0 else cap
+
+    def _cap_allow_set(self, signal: str, entity_ids: list[str]) -> set[str]:
+        """The subset of ``entity_ids`` that fits under ``signal``'s cap.
+
+        Deterministic: the cap keeps the lowest ``entity_id``s (sorted ascending) so the pusher and
+        the panel — which mirrors this ordering — agree on exactly which sensors are sent.
+        """
+        cap = self._cap_for(signal)
+        if cap is None or len(entity_ids) <= cap:
+            return set(entity_ids)
+        return set(sorted(entity_ids)[:cap])
+
     # ── mapping resolution ────────────────────────────────────────────────
     def _metric_for(self, state: State) -> tuple[str, str | None, str | None, bool] | None:
         """Return (signal, unit, display_name, is_custom) for a numeric entity, or None."""
@@ -138,18 +162,39 @@ class SesharoPusher:
                 )
         return None
 
-    def _event_category_for(self, entity_id: str, state: State) -> str | None:
-        custom = self._custom_event.get(entity_id)
-        if custom is not None:
-            return custom[CONF_CUSTOM_SIGNAL]
-        if entity_id in self._preset_excluded:
-            return None  # preset stays on for its class, but this entity was opted out
+    def _preset_event_signal(self, entity_id: str, state: State) -> str | None:
+        """The preset event category an entity maps to (ignoring exclusions/caps), or None."""
         if entity_id.startswith("person."):
             return PERSON_EVENT_CATEGORY if self._preset_active(_PRESENCE_DEVICE_CLASS) else None
         device_class = state.attributes.get(ATTR_DEVICE_CLASS)
         if self._preset_active(device_class):
             return PRESET_EVENTS.get(device_class)
         return None
+
+    def _preset_event_ids(self, signal: str) -> list[str]:
+        """All currently-mapped, non-excluded entity_ids feeding preset event ``signal``."""
+        ids: list[str] = []
+        for state in self._hass.states.async_all():
+            eid = state.entity_id
+            if eid in self._custom_event or eid in self._preset_excluded:
+                continue
+            if self._preset_event_signal(eid, state) == signal:
+                ids.append(eid)
+        return ids
+
+    def _event_category_for(self, entity_id: str, state: State) -> str | None:
+        custom = self._custom_event.get(entity_id)
+        if custom is not None:
+            return custom[CONF_CUSTOM_SIGNAL]
+        if entity_id in self._preset_excluded:
+            return None  # preset stays on for its class, but this entity was opted out
+        signal = self._preset_event_signal(entity_id, state)
+        if signal is None:
+            return None
+        # Only send if this entity is within the signal's cap (else it's over the limit and dropped).
+        if entity_id not in self._cap_allow_set(signal, self._preset_event_ids(signal)):
+            return None
+        return signal
 
     # ── event capture ─────────────────────────────────────────────────────
     @callback
@@ -179,16 +224,45 @@ class SesharoPusher:
             "signal": category,
         }
 
+    def _preset_metric_allow(self, states: list[State]) -> set[str]:
+        """Per-signal capped allow-set of preset metric entity_ids (customs excluded — never capped)."""
+        groups: dict[str, list[str]] = {}
+        for state in states:
+            eid = state.entity_id
+            if eid in self._custom_metric or eid in self._preset_excluded:
+                continue
+            if state.state in _SKIP_STATES:
+                continue
+            device_class = state.attributes.get(ATTR_DEVICE_CLASS)
+            if not self._preset_active(device_class):
+                continue
+            preset = PRESET_METRICS.get(device_class)
+            if preset is None:
+                continue
+            try:
+                float(state.state)  # only numeric sensors consume a cap slot
+            except (ValueError, TypeError):
+                continue
+            groups.setdefault(preset[0], []).append(eid)
+        allow: set[str] = set()
+        for signal, ids in groups.items():
+            allow |= self._cap_allow_set(signal, ids)
+        return allow
+
     # ── flush ─────────────────────────────────────────────────────────────
     def _snapshot_readings(self) -> list[dict[str, Any]]:
         readings: list[dict[str, Any]] = []
-        for state in self._hass.states.async_all():
+        states = self._hass.states.async_all()
+        preset_allow = self._preset_metric_allow(states)
+        for state in states:
             if state.state in _SKIP_STATES:
                 continue
             mapping = self._metric_for(state)
             if mapping is None:
                 continue
             signal, unit, display_name, is_custom = mapping
+            if not is_custom and state.entity_id not in preset_allow:
+                continue  # preset entity over its signal's cap
             try:
                 raw = float(state.state)
             except (ValueError, TypeError):

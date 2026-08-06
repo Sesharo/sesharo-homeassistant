@@ -22,6 +22,7 @@ from .const import (
     CONF_CUSTOM_SIGNAL,
     CONF_CUSTOM_UNIT,
     CONF_INTERVAL,
+    CONF_PRESET_CAPS,
     CONF_PRESET_DISABLED,
     CONF_PRESET_EXCLUDED,
     CONF_PRESETS_ENABLED,
@@ -107,6 +108,7 @@ class SesharoOptionsFlow(config_entries.OptionsFlow):
             # managed by the panel, and the old menu flow must not silently drop them on save.
             CONF_PRESET_DISABLED: list(opts.get(CONF_PRESET_DISABLED, []) or []),
             CONF_PRESET_EXCLUDED: list(opts.get(CONF_PRESET_EXCLUDED, []) or []),
+            CONF_PRESET_CAPS: dict(opts.get(CONF_PRESET_CAPS, {}) or {}),
             CONF_CUSTOM: [dict(c) for c in opts.get(CONF_CUSTOM, [])],
         }
         # The entity picked in add_mapping step 1, carried into the pre-filled step 2.

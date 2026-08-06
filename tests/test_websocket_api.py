@@ -49,6 +49,9 @@ async def test_get_config_returns_shape(hass, hass_ws_client, entry):
     assert result["mappings"] == []
     # The preset catalog is echoed for the panel's preset rows.
     assert any(p["signal"] == "home_temperature" for p in result["presets"])
+    # Cap config is echoed so the panel knows the default + any per-signal overrides.
+    assert result["preset_caps"] == {}
+    assert result["default_cap"] == 10
 
 
 async def test_status_returns_health(hass, hass_ws_client, entry):
@@ -127,6 +130,42 @@ async def test_set_preset_excluded_persists(hass, hass_ws_client, entry):
     assert msg["success"] is True
     await hass.async_block_till_done()
     assert entry.options["preset_excluded"] == ["sensor.freezer"]
+
+
+async def test_set_preset_cap_persists_override(hass, hass_ws_client, entry):
+    client = await hass_ws_client(hass)
+    await client.send_json(
+        {"id": 1, "type": "sesharo/set_preset_cap", "signal": "home_energy", "cap": 5}
+    )
+    msg = await client.receive_json()
+    assert msg["success"] is True
+    await hass.async_block_till_done()
+    assert entry.options["preset_caps"] == {"home_energy": 5}
+
+
+async def test_set_preset_cap_default_value_is_not_pinned(hass, hass_ws_client, entry):
+    # Setting a signal back to the default cap should drop it from the dict (keeps options clean).
+    client = await hass_ws_client(hass)
+    await client.send_json(
+        {"id": 1, "type": "sesharo/set_preset_cap", "signal": "home_energy", "cap": 3}
+    )
+    assert (await client.receive_json())["success"] is True
+    await client.send_json(
+        {"id": 2, "type": "sesharo/set_preset_cap", "signal": "home_energy", "cap": 10}
+    )
+    assert (await client.receive_json())["success"] is True
+    await hass.async_block_till_done()
+    assert entry.options["preset_caps"] == {}
+
+
+async def test_set_preset_cap_clamps_negative_to_zero(hass, hass_ws_client, entry):
+    client = await hass_ws_client(hass)
+    await client.send_json(
+        {"id": 1, "type": "sesharo/set_preset_cap", "signal": "home_power", "cap": -4}
+    )
+    assert (await client.receive_json())["success"] is True
+    await hass.async_block_till_done()
+    assert entry.options["preset_caps"] == {"home_power": 0}  # 0 = no limit
 
 
 async def test_set_mappings_validates_slug(hass, hass_ws_client, entry):

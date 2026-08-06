@@ -19,6 +19,14 @@ CONF_PRESET_DISABLED = "preset_disabled"
 # still than CONF_PRESET_DISABLED — a preset-matched entity is sent iff its class isn't disabled AND
 # the entity isn't in this list. Custom mappings are unaffected (they're explicit intent).
 CONF_PRESET_EXCLUDED = "preset_excluded"
+# Per-preset entity cap: a dict of {sesharo signal slug -> max number of entities to send}. A curated
+# preset (e.g. temperature) can legitimately match dozens of sensors that all funnel into one slug
+# (home_temperature); the cap bounds how many of them actually push, so a big install doesn't flood a
+# single signal by default. Absent slug -> DEFAULT_PRESET_ENTITY_CAP; a value <= 0 means "no limit".
+# Applied *after* CONF_PRESET_EXCLUDED (user opt-outs never consume a cap slot), keeping the
+# lowest-`entity_id` N sensors so the panel and pusher pick the same ones. Custom mappings are never
+# capped — they're explicit intent.
+CONF_PRESET_CAPS = "preset_caps"
 CONF_CUSTOM = "custom"  # list of custom entity mappings (see below)
 
 # A custom mapping entry (in options[CONF_CUSTOM]):
@@ -41,6 +49,10 @@ KIND_EVENT = "event"
 DEFAULT_BASE_URL = "https://api.sesharo.com"
 DEFAULT_INTERVAL = 300  # seconds between pushes
 MIN_INTERVAL = 60
+# Default cap on how many preset-matched entities feed a single Sesharo signal (see CONF_PRESET_CAPS).
+# A sane guardrail so, e.g., 40 power sensors don't all push into home_power out of the box — the user
+# can raise it (or set 0 for no limit) per signal from the panel.
+DEFAULT_PRESET_ENTITY_CAP = 10
 
 # Curated presets — auto-discovered by the sensor's device_class. Each maps to a seeded Sesharo
 # metric type (numeric) sending values in the canonical unit shown (the pusher converts).

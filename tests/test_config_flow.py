@@ -191,7 +191,14 @@ async def test_options_remove_custom_mapping(hass):
 
 async def test_options_carries_panel_managed_keys_through(hass):
     """The legacy menu flow must not clobber the panel's per-preset/per-entity opt-outs on save."""
-    entry = _entry(hass, {"preset_disabled": ["humidity"], "preset_excluded": ["sensor.freezer"]})
+    entry = _entry(
+        hass,
+        {
+            "preset_disabled": ["humidity"],
+            "preset_excluded": ["sensor.freezer"],
+            "preset_caps": {"home_energy": 5},
+        },
+    )
     result = await _menu(hass, entry, "settings")
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {CONF_INTERVAL: 300, "presets_enabled": True}
@@ -201,3 +208,4 @@ async def test_options_carries_panel_managed_keys_through(hass):
     )
     assert entry.options["preset_disabled"] == ["humidity"]
     assert entry.options["preset_excluded"] == ["sensor.freezer"]
+    assert entry.options["preset_caps"] == {"home_energy": 5}

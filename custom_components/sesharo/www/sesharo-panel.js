@@ -89,6 +89,8 @@ class SesharoPanel extends HTMLElement {
     this._editing = null; // inline add/edit row state
     this._selectedSuggestions = new Set();
     this._expandedPresets = new Set(); // preset signals whose per-sensor list is open
+    this._sensorFilter = {}; // preset signal -> filter text for its sensor checklist
+    this._activeFilter = null; // signal whose filter box has focus (suppresses live re-render)
     this._error = null;
     this._loaded = false;
     this._statusTimer = null;
@@ -99,9 +101,9 @@ class SesharoPanel extends HTMLElement {
     const first = this._hass == null;
     this._hass = hass;
     if (first) this._load();
-    else if (!this._editing) {
+    else if (!this._editing && !this._activeFilter) {
       // Live values (preset match, last-sent) come from hass.states — throttle to ~1/2s and never
-      // re-render mid-edit (it would blow away the entity/signal pickers' focus).
+      // re-render mid-edit or mid-filter-typing (it would blow away picker/filter focus).
       const now = Date.now();
       if (now - this._lastRender > 2000) this._render();
     }
@@ -191,6 +193,17 @@ class SesharoPanel extends HTMLElement {
     setTimeout(() => this._refreshStatus(), 1500);
   }
 
+  async _savePresetCap(signal, cap) {
+    cap = Math.max(0, Number(cap) || 0);
+    await this._ws("sesharo/set_preset_cap", { signal, cap });
+    const caps = { ...(this._config.preset_caps || {}) };
+    if (cap === this._config.default_cap) delete caps[signal];
+    else caps[signal] = cap;
+    this._config.preset_caps = caps;
+    this._render();
+    setTimeout(() => this._refreshStatus(), 1500);
+  }
+
   async _pushNow(btn) {
     if (btn) btn.setAttribute("loading", "");
     try {
@@ -243,12 +256,41 @@ class SesharoPanel extends HTMLElement {
     return (this._config.preset_excluded || []).includes(entityId);
   }
 
+  // Effective cap for a signal: per-signal override, else the default. null = no limit.
+  _capFor(signal) {
+    let c = (this._config.preset_caps || {})[signal];
+    if (c === undefined || c === null) c = this._config.default_cap;
+    c = Number(c);
+    return !c || c <= 0 ? null : c;
+  }
+
+  // The set of entity_ids actually sent under the cap: user-included ones, sorted by entity_id
+  // (mirrors the coordinator), truncated to the cap. Anything beyond is "capped out".
+  _cappedAllowSet(signal, matched) {
+    const cap = this._capFor(signal);
+    const included = matched
+      .filter((s) => !this._isExcluded(s.entity_id))
+      .map((s) => s.entity_id)
+      .sort();
+    return new Set(cap == null ? included : included.slice(0, cap));
+  }
+
   // Toggle whether a single preset-matched entity is sent (checked = sent). The preset stays on for
   // the rest of its class; excluded entities go into preset_excluded.
   _toggleEntityExclusion(entityId, included) {
     const excluded = new Set(this._config.preset_excluded || []);
     if (included) excluded.delete(entityId);
     else excluded.add(entityId);
+    this._savePresetExcluded([...excluded]);
+  }
+
+  // Bulk include/exclude every sensor of one preset (only touches this preset's matched entities).
+  _bulkExclusion(matched, includeAll) {
+    const excluded = new Set(this._config.preset_excluded || []);
+    for (const s of matched) {
+      if (includeAll) excluded.delete(s.entity_id);
+      else excluded.add(s.entity_id);
+    }
     this._savePresetExcluded([...excluded]);
   }
 
@@ -294,6 +336,21 @@ class SesharoPanel extends HTMLElement {
     content.appendChild(grid);
 
     root.appendChild(content);
+
+    // Re-rendering on each keystroke rebuilds the DOM, so re-focus the active filter box + restore
+    // the caret to the end (it only ever loses focus here, never mid-type from a live hass update).
+    if (this._activeFilter) {
+      const inp = root.querySelector(`.sensor-filter[data-signal="${this._activeFilter}"]`);
+      if (inp) {
+        inp.focus();
+        const v = inp.value;
+        try {
+          inp.setSelectionRange(v.length, v.length);
+        } catch (e) {
+          /* type=search may not support selection on all browsers */
+        }
+      }
+    }
   }
 
   _wrap(...cards) {
@@ -930,16 +987,20 @@ class SesharoPanel extends HTMLElement {
     for (const p of cfg.presets || []) {
       const matched = this._presetMatches(p);
       const enabled = this._presetEnabled(p);
-      const excludedCount = matched.filter((s) => this._isExcluded(s.entity_id)).length;
-      const sentCount = matched.length - excludedCount;
+      const total = matched.length;
+      const includedCount = matched.filter((s) => !this._isExcluded(s.entity_id)).length;
+      const cap = this._capFor(p.signal);
+      const capped = cap != null && includedCount > cap;
+      const sentCount = cap == null ? includedCount : Math.min(includedCount, cap);
       // Only an enabled preset with >1 sensor is worth drilling into — one sensor is just its switch.
-      const expandable = enabled && matched.length > 1;
+      const expandable = enabled && total > 1;
       const open = this._expandedPresets.has(p.signal);
 
-      const countText =
-        excludedCount > 0
-          ? `${sentCount} of ${matched.length} sensor${matched.length === 1 ? "" : "s"}`
-          : `${matched.length} sensor${matched.length === 1 ? "" : "s"}`;
+      const plural = total === 1 ? "" : "s";
+      let countText = `${total} sensor${plural}`;
+      if (sentCount < total) {
+        countText = `${sentCount} of ${total} sensor${plural}${capped ? " · capped" : ""}`;
+      }
 
       const sw = el("ha-switch", { ".checked": enabled, disabled: cfg.presets_enabled ? null : "" });
       sw.addEventListener("change", (ev) => this._togglePreset(p, ev.target.checked));
@@ -979,17 +1040,95 @@ class SesharoPanel extends HTMLElement {
   }
 
   // The per-sensor include/exclude checklist shown under an expanded preset. Every matched sensor is
-  // sent by default (checked); unchecking one drops just that sensor while the preset stays on.
+  // sent by default (checked); unchecking one drops just that sensor. A cap bounds how many of the
+  // still-checked sensors actually push (the lowest entity_ids win — matching the coordinator); the
+  // rest show "over limit". A filter + select-all/none keep this manageable on big installs.
   _presetSensorList(preset, matched) {
+    const signal = preset.signal;
     const list = el("div", { class: "preset-sensors" });
+    const cap = this._capFor(signal);
+    const allow = this._cappedAllowSet(signal, matched);
+    const total = matched.length;
+
+    // ── controls: cap + bulk select ──────────────────────────────────────
+    const capInput = el("input", {
+      class: "cap-input",
+      type: "number",
+      min: "0",
+      inputmode: "numeric",
+      placeholder: "∞",
+      title: "Max sensors to send into this signal (blank or 0 = no limit)",
+      ".value": cap == null ? "" : String(cap),
+    });
+    capInput.addEventListener("change", (ev) => {
+      const v = (ev.target.value || "").trim();
+      this._savePresetCap(signal, v === "" ? 0 : parseInt(v, 10) || 0);
+    });
+    const controls = el(
+      "div",
+      { class: "sensor-controls" },
+      el(
+        "label",
+        { class: "cap-field" },
+        el("span", {}, "Send up to"),
+        capInput,
+        el("span", { class: "cap-of" }, `of ${total}`)
+      ),
+      el(
+        "div",
+        { class: "sensor-bulk" },
+        el(
+          "button",
+          { class: "linkish", onclick: () => this._bulkExclusion(matched, true) },
+          "Select all"
+        ),
+        el("span", { class: "sep" }, "·"),
+        el(
+          "button",
+          { class: "linkish", onclick: () => this._bulkExclusion(matched, false) },
+          "Select none"
+        )
+      )
+    );
+    list.appendChild(controls);
+
+    // ── filter box ───────────────────────────────────────────────────────
+    const filterText = this._sensorFilter[signal] || "";
+    const filterInput = el("input", {
+      class: "sensor-filter",
+      type: "search",
+      placeholder: "Filter by name or entity id…",
+      "data-signal": signal,
+      ".value": filterText,
+    });
+    filterInput.addEventListener("input", (ev) => {
+      this._sensorFilter[signal] = ev.target.value;
+      this._render();
+    });
+    filterInput.addEventListener("focus", () => {
+      this._activeFilter = signal;
+    });
+    filterInput.addEventListener("blur", () => {
+      if (this._activeFilter === signal) this._activeFilter = null;
+    });
+    list.appendChild(filterInput);
+
+    // ── rows (display sorted by name; cap membership is by entity_id above) ─
+    const q = filterText.trim().toLowerCase();
     const sorted = [...matched].sort((a, b) => {
       const an = (a.attributes.friendly_name || a.entity_id).toLowerCase();
       const bn = (b.attributes.friendly_name || b.entity_id).toLowerCase();
       return an.localeCompare(bn);
     });
+    let shown = 0;
     for (const s of sorted) {
-      const included = !this._isExcluded(s.entity_id);
       const friendly = s.attributes.friendly_name || s.entity_id;
+      if (q && !friendly.toLowerCase().includes(q) && !s.entity_id.toLowerCase().includes(q)) {
+        continue;
+      }
+      shown++;
+      const included = !this._isExcluded(s.entity_id);
+      const cappedOut = included && !allow.has(s.entity_id); // checked, but over the cap
       const unit = s.attributes.unit_of_measurement || "";
       const value = ["unknown", "unavailable", ""].includes(s.state)
         ? "—"
@@ -998,18 +1137,36 @@ class SesharoPanel extends HTMLElement {
       cb.addEventListener("change", (ev) =>
         this._toggleEntityExclusion(s.entity_id, ev.target.checked)
       );
+      const cls = "sensor-row" + (included ? "" : " excluded") + (cappedOut ? " capped" : "");
       list.appendChild(
         el(
           "div",
-          { class: included ? "sensor-row" : "sensor-row excluded" },
+          { class: cls },
           cb,
           el(
             "div",
             { class: "sensor-text" },
-            el("div", { class: "sensor-name" }, friendly),
+            el(
+              "div",
+              { class: "sensor-name-row" },
+              el("span", { class: "sensor-name" }, friendly),
+              cappedOut
+                ? el("span", { class: "cap-badge", title: "Over the limit — not sent" }, "over limit")
+                : null
+            ),
             el("div", { class: "mono sensor-id" }, s.entity_id)
           ),
           el("div", { class: "sensor-val" }, value)
+        )
+      );
+    }
+    if (!shown) list.appendChild(el("div", { class: "sensor-empty" }, "No sensors match."));
+    if (cap != null && allow.size < matched.filter((s) => !this._isExcluded(s.entity_id)).length) {
+      list.appendChild(
+        el(
+          "div",
+          { class: "cap-hint" },
+          `Sending the first ${cap} by entity id. Raise the limit or deselect others to change which send.`
         )
       );
     }
@@ -1325,6 +1482,20 @@ class SesharoPanel extends HTMLElement {
       .sensor-id { font-size: 11px; color: var(--secondary-text-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .sensor-val { font-size: 13px; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
       .sensor-row.excluded .sensor-name, .sensor-row.excluded .sensor-val { color: var(--secondary-text-color); text-decoration: line-through; opacity: .7; }
+      .sensor-row.capped .sensor-name, .sensor-row.capped .sensor-val { color: var(--secondary-text-color); opacity: .55; }
+      .sensor-name-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+      .cap-badge { flex: none; font-size: 10px; line-height: 1; text-transform: uppercase; letter-spacing: .03em; color: var(--warning-color, #b7791f); border: 1px solid var(--warning-color, #b7791f); border-radius: 4px; padding: 2px 4px; }
+      .sensor-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 6px 0 8px; }
+      .cap-field { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--secondary-text-color); }
+      .cap-input { width: 54px; padding: 4px 6px; border: 1px solid var(--divider-color); border-radius: 6px; background: var(--card-background-color); color: var(--primary-text-color); font: inherit; font-size: 12px; text-align: center; }
+      .cap-of { color: var(--secondary-text-color); }
+      .sensor-bulk { display: inline-flex; align-items: center; gap: 6px; }
+      .sensor-bulk .sep { color: var(--secondary-text-color); }
+      .linkish { border: none; background: none; padding: 0; cursor: pointer; color: var(--primary-color, #2D87F0); font: inherit; font-size: 12px; }
+      .linkish:hover { text-decoration: underline; }
+      .sensor-filter { width: 100%; box-sizing: border-box; margin: 0 0 8px; padding: 6px 8px; border: 1px solid var(--divider-color); border-radius: 6px; background: var(--card-background-color); color: var(--primary-text-color); font: inherit; font-size: 12px; }
+      .sensor-empty { font-size: 12px; color: var(--secondary-text-color); padding: 8px 0; }
+      .cap-hint { font-size: 11px; color: var(--secondary-text-color); padding: 6px 0 2px; }
 
       /* suggestions */
       .suggest-row { display: flex; gap: 8px; align-items: center; min-height: 52px; padding: 4px 16px; border-top: 1px solid var(--divider-color); }

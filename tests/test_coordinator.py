@@ -20,9 +20,11 @@ from custom_components.sesharo.const import (
     CONF_CUSTOM_TARGET_UNIT,
     CONF_CUSTOM_UNIT,
     CONF_INTERVAL,
+    CONF_PRESET_CAPS,
     CONF_PRESET_DISABLED,
     CONF_PRESET_EXCLUDED,
     CONF_PRESETS_ENABLED,
+    DEFAULT_PRESET_ENTITY_CAP,
     KIND_METRIC,
 )
 from custom_components.sesharo.coordinator import SesharoPusher
@@ -104,6 +106,84 @@ async def test_per_entity_exclusion_keeps_siblings(hass):
     await pusher.async_push_now()
     entities = {r["entity_id"] for r in _last_readings(client)}
     assert entities == {"sensor.living"}
+
+
+# ── preset entity caps ────────────────────────────────────────────────────────
+def _entities_sent(client: FakeClient) -> set[str]:
+    return {r["entity_id"] for r in _last_readings(client)}
+
+
+async def test_preset_cap_limits_metric_entities_lowest_win(hass):
+    client = FakeClient()
+    pusher = _pusher(hass, client, **{CONF_PRESET_CAPS: {"home_temperature": 2}})
+    for name in ("sensor.t1", "sensor.t2", "sensor.t3", "sensor.t4"):
+        hass.states.async_set(name, "21", {"device_class": "temperature"})
+    await pusher.async_push_now()
+    # Cap keeps the two lowest entity_ids so the panel and pusher agree on which send.
+    assert _entities_sent(client) == {"sensor.t1", "sensor.t2"}
+
+
+async def test_default_cap_applies_without_config(hass):
+    client = FakeClient()
+    pusher = _pusher(hass, client)  # no cap config → DEFAULT_PRESET_ENTITY_CAP
+    for i in range(DEFAULT_PRESET_ENTITY_CAP + 3):
+        hass.states.async_set(f"sensor.e{i:02d}", "100", {"device_class": "energy"})
+    await pusher.async_push_now()
+    assert len(_entities_sent(client)) == DEFAULT_PRESET_ENTITY_CAP
+
+
+async def test_cap_zero_means_unlimited(hass):
+    client = FakeClient()
+    pusher = _pusher(hass, client, **{CONF_PRESET_CAPS: {"home_energy": 0}})
+    for i in range(DEFAULT_PRESET_ENTITY_CAP + 2):  # more than the default would allow
+        hass.states.async_set(f"sensor.e{i:02d}", "100", {"device_class": "energy"})
+    await pusher.async_push_now()
+    assert len(_entities_sent(client)) == DEFAULT_PRESET_ENTITY_CAP + 2
+
+
+async def test_excluded_entities_do_not_consume_a_cap_slot(hass):
+    client = FakeClient()
+    pusher = _pusher(
+        hass,
+        client,
+        **{CONF_PRESET_CAPS: {"home_temperature": 2}, CONF_PRESET_EXCLUDED: ["sensor.t1"]},
+    )
+    for name in ("sensor.t1", "sensor.t2", "sensor.t3", "sensor.t4"):
+        hass.states.async_set(name, "21", {"device_class": "temperature"})
+    await pusher.async_push_now()
+    # t1 is excluded (no slot), so the cap keeps the next two lowest: t2, t3.
+    assert _entities_sent(client) == {"sensor.t2", "sensor.t3"}
+
+
+async def test_cap_is_per_signal_not_shared(hass):
+    client = FakeClient()
+    pusher = _pusher(hass, client, **{CONF_PRESET_CAPS: {"home_temperature": 1}})
+    hass.states.async_set("sensor.t1", "21", {"device_class": "temperature"})
+    hass.states.async_set("sensor.t2", "22", {"device_class": "temperature"})
+    hass.states.async_set("sensor.p1", "500", {"device_class": "power"})
+    hass.states.async_set("sensor.p2", "600", {"device_class": "power"})
+    await pusher.async_push_now()
+    sent = _entities_sent(client)
+    assert sent == {"sensor.t1", "sensor.p1", "sensor.p2"}  # power uncapped by the temp override
+
+
+async def test_preset_cap_limits_events(hass):
+    client = FakeClient()
+    pusher = _pusher(hass, client, **{CONF_PRESET_CAPS: {"home_motion": 1}})
+    hass.states.async_set("binary_sensor.m1", "off", {"device_class": "motion"})
+    hass.states.async_set("binary_sensor.m2", "off", {"device_class": "motion"})
+    await hass.async_block_till_done()
+    await pusher.async_start()
+    try:
+        hass.states.async_set("binary_sensor.m1", "on", {"device_class": "motion"})
+        hass.states.async_set("binary_sensor.m2", "on", {"device_class": "motion"})
+        await hass.async_block_till_done()
+        await pusher.async_push_now()
+    finally:
+        pusher._unsubs and [u() for u in pusher._unsubs]
+        pusher._unsubs.clear()
+    events = client.pushes[-1]["events"]
+    assert {e["entity_id"] for e in events} == {"binary_sensor.m1"}  # lowest entity_id only
 
 
 async def test_non_numeric_and_unavailable_states_skipped(hass):

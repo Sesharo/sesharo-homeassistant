@@ -32,10 +32,12 @@ from .const import (
     CONF_CUSTOM_TARGET_UNIT,
     CONF_CUSTOM_UNIT,
     CONF_INTERVAL,
+    CONF_PRESET_CAPS,
     CONF_PRESET_DISABLED,
     CONF_PRESET_EXCLUDED,
     CONF_PRESETS_ENABLED,
     DEFAULT_INTERVAL,
+    DEFAULT_PRESET_ENTITY_CAP,
     DOMAIN,
     KIND_EVENT,
     KIND_METRIC,
@@ -71,6 +73,7 @@ def async_register(hass: HomeAssistant) -> None:
         ws_set_settings,
         ws_set_presets,
         ws_set_preset_excluded,
+        ws_set_preset_cap,
         ws_set_mappings,
         ws_push_now,
     ):
@@ -118,6 +121,8 @@ def ws_get_config(hass, connection, msg) -> None:
             "presets_enabled": opts.get(CONF_PRESETS_ENABLED, True),
             "preset_disabled": list(opts.get(CONF_PRESET_DISABLED, []) or []),
             "preset_excluded": list(opts.get(CONF_PRESET_EXCLUDED, []) or []),
+            "preset_caps": dict(opts.get(CONF_PRESET_CAPS, {}) or {}),
+            "default_cap": DEFAULT_PRESET_ENTITY_CAP,
             "mappings": [dict(c) for c in opts.get(CONF_CUSTOM, []) or []],
             "presets": _presets_payload(),
         },
@@ -247,6 +252,32 @@ async def ws_set_preset_excluded(hass, connection, msg) -> None:
         entry,
         {CONF_PRESET_EXCLUDED: list(dict.fromkeys(msg.get("preset_excluded", [])))},
     )
+    connection.send_result(msg["id"], {"ok": True})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "sesharo/set_preset_cap",
+        vol.Optional("entry_id"): str,
+        vol.Required("signal"): str,
+        vol.Required("cap"): vol.Coerce(int),
+    }
+)
+@websocket_api.async_response
+async def ws_set_preset_cap(hass, connection, msg) -> None:
+    """Set the max entities feeding one preset signal (0 = no limit; the default cap when unset)."""
+    entry, _ = _resolve(hass, msg)
+    if entry is None:
+        connection.send_error(msg["id"], "not_found", "No Sesharo integration configured")
+        return
+    caps = dict(entry.options.get(CONF_PRESET_CAPS, {}) or {})
+    cap = max(0, int(msg["cap"]))
+    if cap == DEFAULT_PRESET_ENTITY_CAP:
+        caps.pop(msg["signal"], None)  # matches the default — keep options clean, don't pin it
+    else:
+        caps[msg["signal"]] = cap
+    await _update_options(hass, entry, {CONF_PRESET_CAPS: caps})
     connection.send_result(msg["id"], {"ok": True})
 
 
