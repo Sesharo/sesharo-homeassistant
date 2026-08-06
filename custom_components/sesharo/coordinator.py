@@ -27,7 +27,6 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 
 from .api import SesharoApiError, SesharoClient
-from .units import convert_units, fmt_value, to_canonical
 from .const import (
     CONF_CUSTOM,
     CONF_CUSTOM_ENTITY,
@@ -46,6 +45,7 @@ from .const import (
     PRESET_EVENTS,
     PRESET_METRICS,
 )
+from .units import convert_units, fmt_value, to_canonical
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -13,7 +13,8 @@ unit-tested with lightweight stubs:
 from __future__ import annotations
 
 import re
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from homeassistant.const import (
     ATTR_DEVICE_CLASS,
@@ -31,7 +32,6 @@ from .const import (
     CONF_CUSTOM_UNIT,
     KIND_EVENT,
     KIND_METRIC,
-    PERSON_EVENT_CATEGORY,
     PRESET_EVENTS,
     PRESET_METRICS,
 )

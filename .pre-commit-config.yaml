@@ -1,0 +1,23 @@
+# Local fast-feedback before commit. Install once with:  pre-commit install
+# (pre-commit is a dev tool, not a runtime dep — `pip install pre-commit`).
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Keep in lockstep with the ruff pin in requirements_test.txt.
+    rev: v0.16.1
+    hooks:
+      - id: ruff              # lint (with --fix)
+        args: [--fix]
+      - id: ruff-format       # format
+
+  - repo: local
+    hooks:
+      # strings.json is the source of truth; translations/en.json must be a byte-for-byte copy.
+      # Mirrors the `make check` translations-sync guard so a drift is caught before commit.
+      - id: translations-in-sync
+        name: translations/en.json matches strings.json
+        entry: >-
+          bash -c 'diff -q custom_components/sesharo/strings.json
+          custom_components/sesharo/translations/en.json'
+        language: system
+        pass_filenames: false
+        files: ^custom_components/sesharo/(strings\.json|translations/en\.json)$

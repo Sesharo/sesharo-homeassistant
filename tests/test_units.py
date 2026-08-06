@@ -4,6 +4,7 @@ Runnable two ways:
     python3 tests/test_units.py      # plain, no deps
     pytest tests/test_units.py       # if pytest is available
 """
+
 from __future__ import annotations
 
 import sys
@@ -11,11 +12,11 @@ from pathlib import Path
 
 # Standalone-run bootstrap; under pytest, conftest already ran.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from conftest import install_stubs  # noqa: E402
+from conftest import install_stubs
 
 install_stubs()
 
-from custom_components.sesharo.units import (  # noqa: E402
+from custom_components.sesharo.units import (
     convert_units,
     fmt_value,
     to_canonical,
@@ -29,7 +30,7 @@ def _close(a, b, eps=1e-6):
 # ── convert_units ────────────────────────────────────────────────────────────
 def test_identity_same_unit():
     assert convert_units(21.0, "°C", "celsius") == 21.0  # normalised, same family base
-    assert convert_units(50.0, "dBA", "dBA") == 50.0     # unknown unit, but equal → identity
+    assert convert_units(50.0, "dBA", "dBA") == 50.0  # unknown unit, but equal → identity
 
 
 def test_empty_target_is_identity():
@@ -56,9 +57,9 @@ def test_energy_conversions():
 
 
 def test_incompatible_pairs_return_none():
-    assert convert_units(10.0, "dBA", "celsius") is None   # unknown from-unit
+    assert convert_units(10.0, "dBA", "celsius") is None  # unknown from-unit
     assert convert_units(10.0, "celsius", "watts") is None  # different families
-    assert convert_units(10.0, "ppm", "µg/m³") is None      # both unknown, differ
+    assert convert_units(10.0, "ppm", "µg/m³") is None  # both unknown, differ
 
 
 # ── to_canonical (preset signals) ────────────────────────────────────────────

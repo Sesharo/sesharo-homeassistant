@@ -1,0 +1,68 @@
+[project]
+# The integration ships no PyPI package — this file exists only to configure the dev
+# toolchain (ruff, pytest, coverage). Runtime deps live in custom_components/sesharo/manifest.json;
+# test/dev deps live in requirements_test.txt.
+name = "sesharo-homeassistant"
+version = "0.3.1"
+description = "Home Assistant custom integration that pushes selected entity states into Sesharo."
+requires-python = ">=3.13"
+
+[tool.ruff]
+# 100 matches the integration's existing style (HA core uses 88, but this repo's prose-heavy
+# comments read better at 100 and reflowing to 88 would be pure churn).
+line-length = 100
+target-version = "py313"
+# custom_components/sesharo is the whole integration; tests exercise it.
+src = ["custom_components", "tests"]
+
+[tool.ruff.lint]
+# A pragmatic, HA-flavoured rule set: pyflakes + pycodestyle + import sorting + pyupgrade +
+# bugbear + comprehensions + a few correctness-focused extras. Deliberately not maximalist —
+# every rule here catches a real class of bug or inconsistency, not stylistic taste.
+select = [
+    "F",    # pyflakes — undefined names, unused imports/vars
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "I",    # isort — import ordering
+    "UP",   # pyupgrade — modern syntax
+    "B",    # flake8-bugbear — likely bugs (mutable defaults, etc.)
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific
+    "ASYNC",# flake8-async — blocking calls in async code (relevant: this is an async integration)
+    "PIE",  # misc lints
+    "T20",  # flake8-print — no stray print() in the runtime
+]
+ignore = [
+    "SIM108",  # ternary-vs-if — sometimes the if/else reads better
+    "E501",    # line length is owned by `ruff format`, not the linter (matches HA core's config;
+               # avoids format/lint conflicts and E501 noise on prose-heavy comments)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# The standalone test runners intentionally print progress and are import-ordered for readability.
+"tests/*" = ["T20", "E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["custom_components"]
+
+[tool.pytest.ini_options]
+# Repo root on the path so `import custom_components.sesharo.*` resolves in the pHACC tests.
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# pHACC ships its own event-loop/asyncio handling; keep output quiet + strict on markers.
+addopts = "-q --strict-markers"
+
+[tool.coverage.run]
+source = ["custom_components/sesharo"]
+omit = ["custom_components/sesharo/www/*"]
+
+[tool.coverage.report]
+# The panel JS and the Sentry transport init can't be exercised off-device; exclude the
+# defensive/uncoverable lines rather than chase a misleading 100%.
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

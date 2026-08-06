@@ -7,11 +7,11 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
-from homeassistant.helpers import config_validation as cv, selector
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import SesharoApiError, SesharoAuthError, SesharoClient
-from .discovery import discover_candidates, suggest_mapping
 from .const import (
     CONF_BASE_URL,
     CONF_CUSTOM,
@@ -33,10 +33,10 @@ from .const import (
     KIND_METRIC,
     MIN_INTERVAL,
 )
-
+from .discovery import discover_candidates, suggest_mapping
 
 # Mirrors the backend signal/category slug rule (app/schemas/home_assistant.py): a lowercase
-# slug, 1–49 chars. Validated here so a bad slug is caught before it 422s on the first push.
+# slug, 1-49 chars. Validated here so a bad slug is caught before it 422s on the first push.
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_]{0,48}$")
 
 
@@ -76,7 +76,7 @@ class SesharoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> "SesharoOptionsFlow":
+    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> SesharoOptionsFlow:
         return SesharoOptionsFlow(config_entry)
 
 
@@ -220,7 +220,7 @@ class SesharoOptionsFlow(config_entries.OptionsFlow):
         }
         # If the user just failed validation, keep what they typed.
         if user_input is not None:
-            defaults = {**defaults, **{k: v for k, v in user_input.items()}}
+            defaults = {**defaults, **dict(user_input)}
         schema = vol.Schema({
             vol.Required(CONF_CUSTOM_SIGNAL, default=defaults[CONF_CUSTOM_SIGNAL]): str,
             vol.Required(CONF_CUSTOM_KIND, default=defaults[CONF_CUSTOM_KIND]): selector.SelectSelector(

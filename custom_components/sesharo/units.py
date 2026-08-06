@@ -58,7 +58,7 @@ def convert_units(value: float, from_unit: str | None, to_unit: str | None) -> f
 def to_canonical(signal: str, value: float, unit: str | None) -> float:
     """Convert a *preset* reading to Sesharo's canonical unit. Unknown units pass through
     (assumed already canonical, matching prior behaviour)."""
-    preset_unit = {sig: canon for sig, canon in PRESET_METRICS.values()}.get(signal)
+    preset_unit = dict(PRESET_METRICS.values()).get(signal)
     if preset_unit is None:
         return value
     converted = convert_units(value, unit, preset_unit)

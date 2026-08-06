@@ -1,0 +1,14 @@
+# Dev/test dependencies — NOT shipped to end users (runtime deps live in manifest.json).
+# pytest-homeassistant-custom-component pins a matching Home Assistant + pytest stack, so we
+# only pin pHACC itself; it transitively resolves the correct HA/pytest/aiohttp versions.
+#
+# 0.13.316 targets Home Assistant 2026.2.x and supports Python 3.13 (earlier pins broke on a
+# numpy==1.26.0 requirement that has no 3.13 wheel). Bump in lockstep with the HA version you
+# want CI to test against.
+pytest-homeassistant-custom-component==0.13.316
+# The integration hard-depends on `frontend`/`panel_custom` (the sidebar panel), so setting the
+# entry up in tests needs the real frontend wheel (`hass_frontend`), which pHACC omits to stay
+# light. Pin the version Home Assistant 2026.2.x declares; bump alongside pHACC.
+home-assistant-frontend==20260128.6
+pytest-cov>=5.0
+ruff==0.16.1

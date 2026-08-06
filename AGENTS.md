@@ -102,17 +102,48 @@ no trace sampling. Optional `SESHARO_SENTRY_ENVIRONMENT` overrides the environme
 the backend) so HACS installs it; with no DSN set it just sits idle. Sentry project:
 `sesharo-homeassistant` (org `sesharo`).
 
-## Tests
+## Tests, linting, CI
 
-`tests/test_discovery.py` covers the pure `discovery.py` logic (slugify, `suggest_mapping`,
-`discover_candidates` — preset exclusion, already-mapped skip, signal de-dup, ranking).
-`tests/test_units.py` covers `units.py` (temperature/power/energy conversion, inconvertible→`None`,
-preset `to_canonical`, `fmt_value`). HA isn't installed in this repo, so `tests/conftest.py` injects a
-minimal `homeassistant.const` stub + bare `custom_components.sesharo` package objects (bypassing
-`__init__`, which imports the full HA runtime). Each runs two ways: `python3 tests/test_*.py` (no
-deps) or `pytest tests/`. **Off-device only** (needs an on-device / `pytest-homeassistant-custom-component`
-run): the config-flow UI, the **panel** (`www/sesharo-panel.js` — WS round-trip, picker, live values),
-the `websocket_api.py` command handlers, `panel_custom` registration + static serving, and `hassfest`.
+**Two test tiers, one harness (`tests/conftest.py` auto-detects which):**
+
+1. **Dependency-free smoke** (`make smoke` / `python3 tests/test_units.py` / `…test_discovery.py`):
+   the pure modules `units.py` + `discovery.py`. When a real HA *isn't* importable, `conftest`
+   injects a minimal `homeassistant.const` stub + bare `custom_components.sesharo` package objects
+   (bypassing `__init__`). No install needed — fast gate, also what `make release` runs.
+2. **Full pytest suite** (`make test`, needs `pip install -r requirements_test.txt`): runs against a
+   **real** Home Assistant via **`pytest-homeassistant-custom-component`** (pHACC). When real HA is
+   present, `conftest`'s stub injection is a no-op. Covers the previously-untested runtime modules:
+   - `test_api.py` — status→exception mapping (401/403/404→auth, others→api) + **transport/timeout
+     wrapping** (regression for the `asyncio.TimeoutError` escape).
+   - `test_coordinator.py` — preset conversion/gating, per-class + per-entity opt-out, custom
+     net-new vs `target_unit` join (incl. inconvertible-skip), event buffering, **requeue-on-failure**,
+     push-health `status()`, manual-push-when-empty.
+   - `test_websocket_api.py` — every `sesharo/*` command via a real WS client: reads, admin-gated
+     writes, slug validation, mapping de-dup, `push_now`, and the **require_admin rejection**.
+   - `test_config_flow.py` — setup happy path + `invalid_auth`/`cannot_connect`/duplicate-abort;
+     options menu (settings round-trip, two-step add-mapping, bad-slug, remove, panel-key carry).
+   - `test_init.py` — setup→pusher in `hass.data`, options-change reload, unload, panel teardown on
+     permanent removal.
+   - `test_sentry.py` — the `_before_send`/`_event_is_ours` filter + env-gated no-op.
+
+   ~98 tests, ~92% line coverage (`make coverage`). CI enforces `--cov-fail-under=85`.
+
+   > **pHACC needs the frontend wheel.** The integration hard-depends on `frontend`/`panel_custom`,
+   > so setting an entry up in tests requires `home-assistant-frontend` (provides `hass_frontend`),
+   > which pHACC omits. It's pinned in `requirements_test.txt` to the version HA 2026.2.x declares —
+   > bump it in lockstep when you bump the `pytest-homeassistant-custom-component` pin.
+
+**Lint/format:** `ruff` (config in `pyproject.toml`). `make lint` (check) / `make format` (apply).
+Line width is owned by `ruff format` (E501 disabled in the linter, matching HA core). `.pre-commit-config.yaml`
+wires ruff + the translations-sync guard — `pre-commit install` once.
+
+**CI** (`.github/workflows/ci.yml`, on push/PR): ruff lint + format-check, pytest+coverage, HA
+**`hassfest`** (manifest/deps/translations), and **HACS validation**. Sesharo commits straight to
+`main`, so CI runs on `main` too — a green pipeline gates a manual `make release`.
+
+**Still on-device only** (pHACC can't cover): the **panel** `www/sesharo-panel.js` browser behaviour
+(WS round-trip in a real browser, picker popover, live `hass` values, theme) — `node --check` is the
+only automated guard (`make check`).
 
 ## Releasing / HACS updates
 
@@ -128,8 +159,10 @@ tracks the default branch and every update is just a branch re-download. To ship
    `zip_release`/`filename` needed in `hacs.json` (source download is fine).
 4. A HA **restart is still required** after update — Python code only loads on restart (HACS prompts).
 
-`make` targets: `test` (off-device unit + discovery tests), `check` (py_compile + `node --check` +
-JSON/translations sync), `release` (runs `check` + `test` first). Run `make check test` before a PR.
+`make` targets: `test` (full pytest suite), `smoke` (dependency-free units+discovery), `lint`/`format`
+(ruff), `coverage`, `check` (py_compile + `node --check` + JSON/translations sync), `install-dev`
+(venv + dev deps), `release` (runs `check` + `smoke` first — the no-dep gates; the full suite + lint
+run in CI). Run `make lint test check` before merging.
 
 The panel's `module_url` is cache-busted with `?v=<manifest version>` (see `panel.py`) so the new JS
 loads after an update without a manual hard refresh — **bump the version on any `www/` change**.
@@ -163,3 +196,14 @@ option (list of `entity_id`s) honoured by the pusher for both metric and event p
 preset into a per-sensor include/exclude checklist. Config-flow fallback carries the key through.
 28 off-device tests still green (the logic lives in the HA-runtime coordinator, so it's covered by the
 on-device caveat like `CONF_PRESET_DISABLED`). Update via HACS + restart.
+
+**2026-08-05 stability hardening (`v0.3.1`).** Closed the "unverified on-device" gap for the *logic*
+(the browser panel is still on-device-only). Adopted **`pytest-homeassistant-custom-component`** and
+wrote real tests for every previously-untested runtime module — coordinator, api, websocket_api,
+config_flow, `__init__` lifecycle, sentry filter — against a real `hass`/`MockConfigEntry`/mocked
+aiohttp. **~98 tests, ~92% coverage.** Added **ruff** (lint+format), a **GitHub Actions CI** (ruff +
+pytest/coverage + `hassfest` + HACS validation), and **pre-commit**. **Runtime fix:** wrapped
+`asyncio.TimeoutError` in `api.py` (a push timeout used to escape unhandled and skip the event
+requeue). The dependency-free `units`/`discovery` smoke runners still work (`make smoke`). See the
+*Tests, linting, CI* section. Everything runs green off-device in CI; the panel's in-browser behaviour
+remains the one on-device caveat. Update via HACS + restart.

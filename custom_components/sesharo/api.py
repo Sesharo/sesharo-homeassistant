@@ -1,12 +1,19 @@
 """Thin async client for the Sesharo Home Assistant ingest endpoint."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
 import aiohttp
 
 _LOGGER = logging.getLogger(__name__)
+
+# A request that exceeds ``ClientTimeout`` raises ``asyncio.TimeoutError`` (a builtin
+# ``TimeoutError`` since 3.11), which is **not** an ``aiohttp.ClientError`` — so it must be
+# caught alongside it, or a slow/hung Sesharo API escapes as an unhandled exception in the
+# push interval callback (and events never get requeued). See ``async_push``.
+_TRANSPORT_ERRORS = (aiohttp.ClientError, asyncio.TimeoutError)
 
 
 class SesharoAuthError(Exception):
@@ -58,7 +65,7 @@ class SesharoClient:
                     body = await resp.text()
                     raise SesharoApiError(f"Sesharo signals fetch failed ({resp.status}): {body[:300]}")
                 return await resp.json()
-        except aiohttp.ClientError as exc:
+        except _TRANSPORT_ERRORS as exc:
             raise SesharoApiError(f"Could not reach Sesharo: {exc}") from exc
 
     async def async_push(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -72,5 +79,5 @@ class SesharoClient:
                     body = await resp.text()
                     raise SesharoApiError(f"Sesharo ingest failed ({resp.status}): {body[:300]}")
                 return await resp.json()
-        except aiohttp.ClientError as exc:
+        except _TRANSPORT_ERRORS as exc:
             raise SesharoApiError(f"Could not reach Sesharo: {exc}") from exc

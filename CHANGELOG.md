@@ -4,6 +4,31 @@ All notable changes to the Sesharo Home Assistant integration. Versions match `m
 section for the current version is what `make release` publishes to GitHub Releases (and HACS renders
 as the update changelog).
 
+## v0.3.1 — Reliability: survive API timeouts, plus a real test + CI suite
+
+A maintenance release focused on stability. No user-facing feature changes.
+
+### Fixed
+
+- **Push timeouts no longer crash the push cycle.** A request that exceeded the 30s timeout raised
+  `asyncio.TimeoutError`, which isn't an `aiohttp.ClientError` — so it escaped the client as an
+  unhandled exception in the interval callback, and buffered events were **not** requeued for retry.
+  Timeouts are now wrapped like any other transport failure, so a slow/unreachable Sesharo API just
+  fails that push and retries next interval (events preserved).
+
+### Developer / project health (no runtime impact)
+
+- **Real off-device test suite.** Added `pytest` + `pytest-homeassistant-custom-component` tests for
+  the previously-untested runtime modules — the push coordinator (unit conversion, preset gating,
+  per-entity exclusion, event buffering, requeue-on-failure), the API client (status→error mapping,
+  timeout wrapping), the WebSocket command surface (admin gating, slug validation, de-dup), the
+  config/options flows, the setup/unload/panel lifecycle, and the Sentry filter. ~98 tests, ~92%
+  coverage. The dependency-free `units`/`discovery` runners still work as a fast smoke path.
+- **Linting + formatting** via `ruff` (`make lint` / `make format`).
+- **CI** (`.github/workflows/ci.yml`): ruff + pytest/coverage + Home Assistant `hassfest` + HACS
+  validation on every push/PR.
+- **pre-commit** hooks (ruff + translations-sync).
+
 ## v0.3.0 — Choose which sensors a preset sends
 
 Presets are matched by device class, so turning one on used to send **every** matching entity — all

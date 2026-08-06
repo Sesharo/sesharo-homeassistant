@@ -77,6 +77,22 @@ You'll need three things from the Sesharo app:
 Then open the integration's **Configure** (Options) to adjust the push interval, toggle presets, and add
 custom entity → signal mappings.
 
+## Development
+
+```bash
+make install-dev     # create .venv and install the test/dev toolchain (pytest + HA + ruff)
+. .venv/bin/activate
+make test            # full pytest suite (pytest-homeassistant-custom-component)
+make lint            # ruff lint + format check   (make format to apply)
+make coverage        # suite + coverage report
+make smoke           # fast, dependency-free logic tests — no HA install needed
+make check           # py_compile + panel `node --check` + JSON/translations sync
+```
+
+CI runs ruff, the pytest suite (+ coverage), Home Assistant `hassfest`, and HACS validation on every
+push/PR. See `AGENTS.md` → *Tests, linting, CI* for the full breakdown and the release flow
+(`make release`).
+
 ## Notes
 
 - No entities are created in Home Assistant — this integration only *exports* data.

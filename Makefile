@@ -7,20 +7,40 @@ PKG     := custom_components/sesharo
 VERSION := $(shell python3 -c "import json; print(json.load(open('$(PKG)/manifest.json'))['version'])")
 TAG     := v$(VERSION)
 
-.PHONY: help test check release version
+PYTHON  ?= python3
+
+.PHONY: help test smoke lint format coverage check install-dev release version
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
-		| awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
+		| awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
 version: ## Print the version from manifest.json
 	@echo $(VERSION)
 
-test: ## Run the off-device unit + discovery tests
-	@python3 tests/test_units.py
-	@python3 tests/test_discovery.py
+install-dev: ## Create .venv and install the test/dev toolchain (pytest + HA + ruff)
+	$(PYTHON) -m venv .venv
+	. .venv/bin/activate && pip install -U pip && pip install -r requirements_test.txt
+	@echo "Activate with:  . .venv/bin/activate"
 
-check: ## Syntax-check all Python + the panel JS (a lint/build proxy)
+test: ## Run the full pytest suite (needs the dev deps — see install-dev)
+	$(PYTHON) -m pytest
+
+smoke: ## Fast, dependency-free logic tests (units + discovery) — no HA/pytest needed
+	@$(PYTHON) tests/test_units.py
+	@$(PYTHON) tests/test_discovery.py
+
+lint: ## ruff lint + format check (no changes made)
+	$(PYTHON) -m ruff check custom_components tests
+	$(PYTHON) -m ruff format --check custom_components tests
+
+format: ## Apply ruff auto-formatting
+	$(PYTHON) -m ruff format custom_components tests
+
+coverage: ## Full suite with a coverage report
+	$(PYTHON) -m pytest --cov --cov-report=term-missing
+
+check: ## Syntax-check all Python + the panel JS (a build proxy `pytest` can't cover)
 	@python3 -m py_compile $(PKG)/*.py && echo "python: ok"
 	@node --check $(PKG)/www/sesharo-panel.js && echo "panel js: ok"
 	@python3 -c "import json; [json.load(open(f)) for f in ['$(PKG)/manifest.json', '$(PKG)/strings.json', '$(PKG)/translations/en.json', 'hacs.json']]" && echo "json: ok"
@@ -31,7 +51,10 @@ check: ## Syntax-check all Python + the panel JS (a lint/build proxy)
 # Cut a GitHub release for the current manifest version. HACS switches from branch-tracking to
 # release-tracking once releases exist, giving a real "Update available" card + changelog + version.
 # Notes come from the matching `## $(TAG)` section of CHANGELOG.md. Requires `gh` auth + push access.
-release: check test ## Tag + publish a GitHub release for the current version (notes from CHANGELOG.md)
+# Depends only on the dependency-free gates (check + smoke) so it runs anywhere with `gh` — no venv
+# needed. The authoritative full pytest suite + ruff lint run in CI on every push to main; cut a
+# release from a green main.
+release: check smoke ## Tag + publish a GitHub release for the current version (notes from CHANGELOG.md)
 	@command -v gh >/dev/null || (echo "gh CLI not found — install + 'gh auth login'"; exit 1)
 	@git rev-parse --abbrev-ref HEAD | grep -qx main \
 		|| (echo "Refusing to release from a non-main branch (on $$(git rev-parse --abbrev-ref HEAD))."; exit 1)
