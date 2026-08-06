@@ -11,6 +11,7 @@ All commands operate on the integration's single (or a named) config entry:
 Writes persist by updating the config entry's options, which fires the update listener in
 ``__init__`` → the entry reloads → a fresh ``SesharoPusher`` picks up the change.
 """
+
 from __future__ import annotations
 
 import re
@@ -269,7 +270,8 @@ async def ws_set_mappings(hass, connection, msg) -> None:
         signal = (m[CONF_CUSTOM_SIGNAL] or "").strip().lower()
         if not _SLUG_RE.match(signal):
             connection.send_error(
-                msg["id"], "invalid_signal",
+                msg["id"],
+                "invalid_signal",
                 f"Signal '{signal}' must be lowercase letters, numbers and underscores (max 49).",
             )
             return

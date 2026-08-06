@@ -10,6 +10,7 @@ unit-tested with lightweight stubs:
   covered by a preset or an existing custom mapping, so the *Suggest entities* flow can offer a
   tick-box list.
 """
+
 from __future__ import annotations
 
 import re

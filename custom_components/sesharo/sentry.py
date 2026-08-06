@@ -8,6 +8,7 @@ capture unrelated errors from the user's HA or other integrations.
 
 Mirrors the env-gated guard in `sesharo-api` (`app/telemetry.py`): no DSN → no-op.
 """
+
 from __future__ import annotations
 
 import json

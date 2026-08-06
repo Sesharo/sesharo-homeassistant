@@ -1,4 +1,5 @@
 """Constants + the preset signal catalog for the Sesharo Home Assistant integration."""
+
 from __future__ import annotations
 
 DOMAIN = "sesharo"

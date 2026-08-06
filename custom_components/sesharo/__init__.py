@@ -1,4 +1,5 @@
 """The Sesharo integration — pushes selected Home Assistant states into Sesharo."""
+
 from __future__ import annotations
 
 import logging

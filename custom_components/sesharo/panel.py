@@ -5,6 +5,7 @@ ES module from a static path we serve out of the integration's ``www/`` director
 **global, not per-entry** — done once on the first entry setup and torn down when the last entry
 unloads — so we guard it with a flag in ``hass.data[DOMAIN]``.
 """
+
 from __future__ import annotations
 
 import logging

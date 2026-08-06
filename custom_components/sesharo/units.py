@@ -8,6 +8,7 @@ holds the conversion tables and the two entry points the coordinator uses:
   record a wrong number.
 - ``to_canonical`` — convert a *preset* reading to that signal's canonical unit.
 """
+
 from __future__ import annotations
 
 from .const import PRESET_METRICS
@@ -15,10 +16,14 @@ from .const import PRESET_METRICS
 # Each family maps a recognised unit alias to a factor/formula that takes the value **to** the
 # family's base unit. Anything not listed is "unknown" and conversion is refused.
 _TEMP_TO_C = {  # base: celsius
-    "°c": lambda v: v, "c": lambda v: v, "celsius": lambda v: v,
-    "°f": lambda v: (v - 32.0) * 5.0 / 9.0, "f": lambda v: (v - 32.0) * 5.0 / 9.0,
+    "°c": lambda v: v,
+    "c": lambda v: v,
+    "celsius": lambda v: v,
+    "°f": lambda v: (v - 32.0) * 5.0 / 9.0,
+    "f": lambda v: (v - 32.0) * 5.0 / 9.0,
     "fahrenheit": lambda v: (v - 32.0) * 5.0 / 9.0,
-    "k": lambda v: v - 273.15, "kelvin": lambda v: v - 273.15,
+    "k": lambda v: v - 273.15,
+    "kelvin": lambda v: v - 273.15,
 }
 _C_TO = {  # celsius → canonical target
     "celsius": lambda v: v,
@@ -26,12 +31,22 @@ _C_TO = {  # celsius → canonical target
     "kelvin": lambda v: v + 273.15,
 }
 _TEMP_ALIAS = {  # normalise a target-unit alias to a _C_TO key
-    "°c": "celsius", "c": "celsius", "celsius": "celsius",
-    "°f": "°f", "f": "°f", "fahrenheit": "°f", "k": "kelvin", "kelvin": "kelvin",
+    "°c": "celsius",
+    "c": "celsius",
+    "celsius": "celsius",
+    "°f": "°f",
+    "f": "°f",
+    "fahrenheit": "°f",
+    "k": "kelvin",
+    "kelvin": "kelvin",
 }
 _POWER_TO_W = {"w": 1.0, "watt": 1.0, "watts": 1.0, "kw": 1000.0, "kilowatt": 1000.0, "mw": 0.001}
 _ENERGY_TO_KWH = {
-    "kwh": 1.0, "wh": 0.001, "watt-hour": 0.001, "watt hour": 0.001, "mwh": 1000.0,
+    "kwh": 1.0,
+    "wh": 0.001,
+    "watt-hour": 0.001,
+    "watt hour": 0.001,
+    "mwh": 1000.0,
 }
 
 

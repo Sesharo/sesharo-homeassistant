@@ -8,6 +8,7 @@ The pusher also keeps a small amount of **push-health state** (last/next push, f
 last value sent per entity) which the sidebar panel reads over the WebSocket API — the integration
 creates no HA entities, so a diagnostic sensor isn't an option.
 """
+
 from __future__ import annotations
 
 import logging
@@ -66,15 +67,17 @@ class SesharoPusher:
         self._custom_metric: dict[str, dict] = {}
         self._custom_event: dict[str, dict] = {}
         for entry in options.get(CONF_CUSTOM, []) or []:
-            target = self._custom_metric if entry.get(CONF_CUSTOM_KIND) == KIND_METRIC else self._custom_event
+            target = (
+                self._custom_metric
+                if entry.get(CONF_CUSTOM_KIND) == KIND_METRIC
+                else self._custom_event
+            )
             target[entry[CONF_CUSTOM_ENTITY]] = entry
         self._presets_enabled = options.get(CONF_PRESETS_ENABLED, True)
         self._preset_disabled: set[str] = set(options.get(CONF_PRESET_DISABLED, []) or [])
         # Individual preset-matched entities the user opted out of (preset stays on for the rest).
         self._preset_excluded: set[str] = set(options.get(CONF_PRESET_EXCLUDED, []) or [])
-        self._interval = timedelta(
-            seconds=int(self._options.get(CONF_INTERVAL, DEFAULT_INTERVAL))
-        )
+        self._interval = timedelta(seconds=int(self._options.get(CONF_INTERVAL, DEFAULT_INTERVAL)))
 
         # ── push-health state (read by the panel via websocket_api) ──────────
         self._last_push_at: datetime | None = None
@@ -88,8 +91,12 @@ class SesharoPusher:
 
     # ── lifecycle ─────────────────────────────────────────────────────────
     async def async_start(self) -> None:
-        self._unsubs.append(async_track_time_interval(self._hass, self._async_flush, self._interval))
-        self._unsubs.append(self._hass.bus.async_listen(EVENT_STATE_CHANGED, self._on_state_changed))
+        self._unsubs.append(
+            async_track_time_interval(self._hass, self._async_flush, self._interval)
+        )
+        self._unsubs.append(
+            self._hass.bus.async_listen(EVENT_STATE_CHANGED, self._on_state_changed)
+        )
 
     async def async_stop(self) -> None:
         for unsub in self._unsubs:
@@ -123,7 +130,12 @@ class SesharoPusher:
             preset = PRESET_METRICS.get(device_class)
             if preset is not None:
                 signal, canonical_unit = preset
-                return signal, state.attributes.get(ATTR_UNIT_OF_MEASUREMENT, canonical_unit), None, False
+                return (
+                    signal,
+                    state.attributes.get(ATTR_UNIT_OF_MEASUREMENT, canonical_unit),
+                    None,
+                    False,
+                )
         return None
 
     def _event_category_for(self, entity_id: str, state: State) -> str | None:
@@ -152,15 +164,19 @@ class SesharoPusher:
         if category is None:
             return
         occurred_at = new_state.last_changed.isoformat()
-        self._event_buffer.append({
-            "category": category,
-            "occurred_at": occurred_at,
-            "state": new_state.state,
-            "entity_id": new_state.entity_id,
-            "name": new_state.attributes.get(ATTR_FRIENDLY_NAME),
-        })
+        self._event_buffer.append(
+            {
+                "category": category,
+                "occurred_at": occurred_at,
+                "state": new_state.state,
+                "entity_id": new_state.entity_id,
+                "name": new_state.attributes.get(ATTR_FRIENDLY_NAME),
+            }
+        )
         self._last_sent[new_state.entity_id] = {
-            "value": new_state.state, "at": occurred_at, "signal": category,
+            "value": new_state.state,
+            "at": occurred_at,
+            "signal": category,
         }
 
     # ── flush ─────────────────────────────────────────────────────────────
@@ -197,7 +213,10 @@ class SesharoPusher:
                     if converted is None:
                         _LOGGER.warning(
                             "Skipping %s → %s: cannot convert %s to %s",
-                            state.entity_id, signal, entity_unit, target_unit,
+                            state.entity_id,
+                            signal,
+                            entity_unit,
+                            target_unit,
                         )
                         continue
                     value = converted
@@ -206,11 +225,15 @@ class SesharoPusher:
                     # Net-new custom signal: send raw, carry unit + name so the backend creates it.
                     value = raw
                     reading["unit"] = unit
-                    reading["display_name"] = display_name or state.attributes.get(ATTR_FRIENDLY_NAME)
+                    reading["display_name"] = display_name or state.attributes.get(
+                        ATTR_FRIENDLY_NAME
+                    )
             reading["value"] = value
             readings.append(reading)
             self._last_sent[state.entity_id] = {
-                "value": fmt_value(value), "at": recorded_at, "signal": signal,
+                "value": fmt_value(value),
+                "at": recorded_at,
+                "signal": signal,
             }
         return readings
 
@@ -241,7 +264,9 @@ class SesharoPusher:
             self._consecutive_failures += 1
             self._last_push_at = dt_util.utcnow()
             if final:
-                _LOGGER.warning("Final Sesharo push failed, %d event(s) dropped: %s", len(events), exc)
+                _LOGGER.warning(
+                    "Final Sesharo push failed, %d event(s) dropped: %s", len(events), exc
+                )
             else:
                 _LOGGER.warning("Sesharo push failed, will retry next interval: %s", exc)
 
@@ -261,9 +286,7 @@ class SesharoPusher:
 
     def status(self) -> dict[str, Any]:
         last_iso = self._last_push_at.isoformat() if self._last_push_at else None
-        next_iso = (
-            (self._last_push_at + self._interval).isoformat() if self._last_push_at else None
-        )
+        next_iso = (self._last_push_at + self._interval).isoformat() if self._last_push_at else None
         return {
             "connected": self._last_ok,  # True / False / None(never pushed)
             "last_push": last_iso,

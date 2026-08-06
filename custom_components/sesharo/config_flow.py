@@ -1,4 +1,5 @@
 """Config + options flows for the Sesharo integration."""
+
 from __future__ import annotations
 
 import re
@@ -58,20 +59,27 @@ class SesharoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         errors: dict[str, str] = {}
         if user_input is not None:
-            await self.async_set_unique_id(f"{user_input[CONF_BASE_URL]}::{user_input[CONF_USER_ID]}")
+            await self.async_set_unique_id(
+                f"{user_input[CONF_BASE_URL]}::{user_input[CONF_USER_ID]}"
+            )
             self._abort_if_unique_id_configured()
             error = await _validate(
-                self.hass, user_input[CONF_BASE_URL], user_input[CONF_USER_ID], user_input[CONF_TOKEN]
+                self.hass,
+                user_input[CONF_BASE_URL],
+                user_input[CONF_USER_ID],
+                user_input[CONF_TOKEN],
             )
             if error is None:
                 return self.async_create_entry(title="Sesharo", data=user_input)
             errors["base"] = error
 
-        schema = vol.Schema({
-            vol.Required(CONF_BASE_URL, default=DEFAULT_BASE_URL): str,
-            vol.Required(CONF_USER_ID): str,
-            vol.Required(CONF_TOKEN): str,
-        })
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_BASE_URL, default=DEFAULT_BASE_URL): str,
+                vol.Required(CONF_USER_ID): str,
+                vol.Required(CONF_TOKEN): str,
+            }
+        )
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
 
     @staticmethod
@@ -108,13 +116,15 @@ class SesharoOptionsFlow(config_entries.OptionsFlow):
     def _add_mapping(self, entity: str, signal: str, kind: str, unit: str, name: str) -> None:
         """Replace any existing mapping for ``entity`` and append the new one."""
         custom = [c for c in self._options[CONF_CUSTOM] if c[CONF_CUSTOM_ENTITY] != entity]
-        custom.append({
-            CONF_CUSTOM_ENTITY: entity,
-            CONF_CUSTOM_SIGNAL: signal,
-            CONF_CUSTOM_KIND: kind,
-            CONF_CUSTOM_UNIT: unit,
-            CONF_CUSTOM_NAME: name,
-        })
+        custom.append(
+            {
+                CONF_CUSTOM_ENTITY: entity,
+                CONF_CUSTOM_SIGNAL: signal,
+                CONF_CUSTOM_KIND: kind,
+                CONF_CUSTOM_UNIT: unit,
+                CONF_CUSTOM_NAME: name,
+            }
+        )
         self._options[CONF_CUSTOM] = custom
 
     def _mapped_entities(self) -> set[str]:
@@ -144,10 +154,14 @@ class SesharoOptionsFlow(config_entries.OptionsFlow):
             self._options[CONF_INTERVAL] = max(MIN_INTERVAL, int(user_input[CONF_INTERVAL]))
             self._options[CONF_PRESETS_ENABLED] = user_input[CONF_PRESETS_ENABLED]
             return await self.async_step_init()
-        schema = vol.Schema({
-            vol.Required(CONF_INTERVAL, default=self._options[CONF_INTERVAL]): int,
-            vol.Required(CONF_PRESETS_ENABLED, default=self._options[CONF_PRESETS_ENABLED]): bool,
-        })
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_INTERVAL, default=self._options[CONF_INTERVAL]): int,
+                vol.Required(
+                    CONF_PRESETS_ENABLED, default=self._options[CONF_PRESETS_ENABLED]
+                ): bool,
+            }
+        )
         return self.async_show_form(step_id="settings", data_schema=schema)
 
     async def async_step_discover(self, user_input: dict[str, Any] | None = None):
@@ -166,13 +180,17 @@ class SesharoOptionsFlow(config_entries.OptionsFlow):
                 c = by_entity.get(entity)
                 if c is not None:
                     self._add_mapping(
-                        entity, c[CONF_CUSTOM_SIGNAL], c[CONF_CUSTOM_KIND],
-                        c[CONF_CUSTOM_UNIT], c[CONF_CUSTOM_NAME],
+                        entity,
+                        c[CONF_CUSTOM_SIGNAL],
+                        c[CONF_CUSTOM_KIND],
+                        c[CONF_CUSTOM_UNIT],
+                        c[CONF_CUSTOM_NAME],
                     )
             return await self.async_step_init()
         labels = {
-            c[CONF_CUSTOM_ENTITY]:
-                f"{c[CONF_CUSTOM_ENTITY]} → {c[CONF_CUSTOM_SIGNAL]} ({c[CONF_CUSTOM_KIND]})"
+            c[
+                CONF_CUSTOM_ENTITY
+            ]: f"{c[CONF_CUSTOM_ENTITY]} → {c[CONF_CUSTOM_SIGNAL]} ({c[CONF_CUSTOM_KIND]})"
             for c in candidates
         }
         schema = vol.Schema({vol.Required("add", default=[]): cv.multi_select(labels)})
@@ -203,7 +221,8 @@ class SesharoOptionsFlow(config_entries.OptionsFlow):
                 errors[CONF_CUSTOM_SIGNAL] = "invalid_signal"
             if not errors:
                 self._add_mapping(
-                    entity, signal,
+                    entity,
+                    signal,
                     user_input.get(CONF_CUSTOM_KIND, KIND_METRIC),
                     (user_input.get(CONF_CUSTOM_UNIT) or "").strip(),
                     (user_input.get(CONF_CUSTOM_NAME) or "").strip(),
@@ -215,22 +234,30 @@ class SesharoOptionsFlow(config_entries.OptionsFlow):
         state = self.hass.states.get(entity)
         suggestion = suggest_mapping(entity, state) if state is not None else None
         defaults = suggestion or {
-            CONF_CUSTOM_SIGNAL: "", CONF_CUSTOM_KIND: KIND_METRIC,
-            CONF_CUSTOM_UNIT: "", CONF_CUSTOM_NAME: "",
+            CONF_CUSTOM_SIGNAL: "",
+            CONF_CUSTOM_KIND: KIND_METRIC,
+            CONF_CUSTOM_UNIT: "",
+            CONF_CUSTOM_NAME: "",
         }
         # If the user just failed validation, keep what they typed.
         if user_input is not None:
             defaults = {**defaults, **dict(user_input)}
-        schema = vol.Schema({
-            vol.Required(CONF_CUSTOM_SIGNAL, default=defaults[CONF_CUSTOM_SIGNAL]): str,
-            vol.Required(CONF_CUSTOM_KIND, default=defaults[CONF_CUSTOM_KIND]): selector.SelectSelector(
-                selector.SelectSelectorConfig(options=[KIND_METRIC, KIND_EVENT])
-            ),
-            vol.Optional(CONF_CUSTOM_UNIT, default=defaults[CONF_CUSTOM_UNIT]): str,
-            vol.Optional(CONF_CUSTOM_NAME, default=defaults[CONF_CUSTOM_NAME]): str,
-        })
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_CUSTOM_SIGNAL, default=defaults[CONF_CUSTOM_SIGNAL]): str,
+                vol.Required(
+                    CONF_CUSTOM_KIND, default=defaults[CONF_CUSTOM_KIND]
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=[KIND_METRIC, KIND_EVENT])
+                ),
+                vol.Optional(CONF_CUSTOM_UNIT, default=defaults[CONF_CUSTOM_UNIT]): str,
+                vol.Optional(CONF_CUSTOM_NAME, default=defaults[CONF_CUSTOM_NAME]): str,
+            }
+        )
         return self.async_show_form(
-            step_id="configure_mapping", data_schema=schema, errors=errors,
+            step_id="configure_mapping",
+            data_schema=schema,
+            errors=errors,
             description_placeholders={"entity": entity},
         )
 
@@ -240,10 +267,14 @@ class SesharoOptionsFlow(config_entries.OptionsFlow):
             return await self.async_step_init()
         if user_input is not None:
             to_remove = set(user_input.get("remove", []))
-            self._options[CONF_CUSTOM] = [c for c in custom if c[CONF_CUSTOM_ENTITY] not in to_remove]
+            self._options[CONF_CUSTOM] = [
+                c for c in custom if c[CONF_CUSTOM_ENTITY] not in to_remove
+            ]
             return await self.async_step_init()
         labels = {
-            c[CONF_CUSTOM_ENTITY]: f"{c[CONF_CUSTOM_ENTITY]} → {c[CONF_CUSTOM_SIGNAL]} ({c[CONF_CUSTOM_KIND]})"
+            c[
+                CONF_CUSTOM_ENTITY
+            ]: f"{c[CONF_CUSTOM_ENTITY]} → {c[CONF_CUSTOM_SIGNAL]} ({c[CONF_CUSTOM_KIND]})"
             for c in custom
         }
         schema = vol.Schema({vol.Required("remove", default=[]): cv.multi_select(labels)})

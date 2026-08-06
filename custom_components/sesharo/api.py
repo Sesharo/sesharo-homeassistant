@@ -1,4 +1,5 @@
 """Thin async client for the Sesharo Home Assistant ingest endpoint."""
+
 from __future__ import annotations
 
 import asyncio
@@ -27,7 +28,9 @@ class SesharoApiError(Exception):
 class SesharoClient:
     """Posts batches of readings + events to POST /users/{id}/home-assistant."""
 
-    def __init__(self, session: aiohttp.ClientSession, base_url: str, user_id: str, token: str) -> None:
+    def __init__(
+        self, session: aiohttp.ClientSession, base_url: str, user_id: str, token: str
+    ) -> None:
         self._session = session
         self._base = base_url.rstrip("/")
         self._user_id = user_id
@@ -63,7 +66,9 @@ class SesharoClient:
                     raise SesharoAuthError(f"Sesharo rejected the request ({resp.status})")
                 if resp.status >= 400:
                     body = await resp.text()
-                    raise SesharoApiError(f"Sesharo signals fetch failed ({resp.status}): {body[:300]}")
+                    raise SesharoApiError(
+                        f"Sesharo signals fetch failed ({resp.status}): {body[:300]}"
+                    )
                 return await resp.json()
         except _TRANSPORT_ERRORS as exc:
             raise SesharoApiError(f"Could not reach Sesharo: {exc}") from exc
@@ -71,7 +76,10 @@ class SesharoClient:
     async def async_push(self, payload: dict[str, Any]) -> dict[str, Any]:
         try:
             async with self._session.post(
-                self._url, json=payload, headers=self._headers, timeout=aiohttp.ClientTimeout(total=30)
+                self._url,
+                json=payload,
+                headers=self._headers,
+                timeout=aiohttp.ClientTimeout(total=30),
             ) as resp:
                 if resp.status in (401, 403, 404):
                     raise SesharoAuthError(f"Sesharo rejected the request ({resp.status})")
