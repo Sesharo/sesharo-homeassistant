@@ -58,11 +58,9 @@ jobs:
         uses: hacs/action@main
         with:
           category: integration
-          # This integration ships as a HACS *custom repository* (README → Installation), so the
-          # default-store *listing* checks don't apply and aren't gated here:
-          #   - brands  → icons are submitted to home-assistant/brands separately (see AGENTS.md).
-          #   - license → the repo has no LICENSE yet; picking one is a maintainer decision.
-          #   - topics  → GitHub repo topics are a discoverability nicety, not a validity check.
-          # The integration's *actual* validity (manifest, deps, translations) is enforced by the
-          # hassfest job above; this job still runs HACS's structural checks.
-          ignore: brands license topics
+          # Full HACS default-store validation is enforced EXCEPT `brands`, which needs an external
+          # PR to home-assistant/brands (adding custom_integrations/sesharo/icon.png) that must merge
+          # before this can pass — the `brands/` assets are staged and the PR is the last submission
+          # step (see AGENTS.md → "HACS default-store submission"). LICENSE + repo topics are now in
+          # place, so those checks are gated. Drop `brands` here once the brands PR merges.
+          ignore: brands

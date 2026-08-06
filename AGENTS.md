@@ -167,6 +167,26 @@ run in CI). Run `make lint test check` before merging.
 The panel's `module_url` is cache-busted with `?v=<manifest version>` (see `panel.py`) so the new JS
 loads after an update without a manual hard refresh — **bump the version on any `www/` change**.
 
+## HACS default-store submission
+
+The repo is being prepped for inclusion in the **HACS default store** (so users can install it by
+name instead of adding a custom repository). Current state against the
+[HACS inclusion requirements](https://hacs.xyz/docs/publish/include):
+
+- ✅ **Public repo** with a **description** and **topics** (`home-assistant`, `hacs`, … — set on the
+  GitHub repo, not in-tree) and a **homepage** (`https://sesharo.com`).
+- ✅ **`LICENSE`** (MIT) in the repo root.
+- ✅ **Releases** exist with semver tags (`make release`); HACS tracks releases.
+- ✅ **`hacs.json`** valid (`render_readme: true` → the README is the HACS description; no `info.md`
+  needed) and **`hassfest`** + **HACS validation** pass in CI (`.github/workflows/ci.yml`).
+- ⏳ **Brands** — the one remaining step. The domain must exist in
+  [`home-assistant/brands`](https://github.com/home-assistant/brands) under
+  `custom_integrations/sesharo/`. Assets are staged in `brands/` (`icon.png` is 256×256; `logo.png`
+  is identical, so the brands PR should submit **only `icon.png`** — brands treats a same-as-icon
+  logo as unnecessary). Open a PR adding `custom_integrations/sesharo/icon.png` (+ optional
+  `icon@2x.png` 512×512). Until it merges, the HACS CI job keeps `ignore: brands`; **drop that once
+  the brands PR merges**, then the actual submission is opening an issue on `hacs/default`.
+
 ## Validation / status
 
 Built 2026-07-26. Live on a real HA instance since 2026-07-27 — metrics confirmed landing in Sesharo
