@@ -58,6 +58,11 @@ jobs:
         uses: hacs/action@main
         with:
           category: integration
-          # The brand icons are submitted to home-assistant/brands separately (see AGENTS.md →
-          # brands/); don't fail CI on that pending external step.
-          ignore: brands
+          # This integration ships as a HACS *custom repository* (README → Installation), so the
+          # default-store *listing* checks don't apply and aren't gated here:
+          #   - brands  → icons are submitted to home-assistant/brands separately (see AGENTS.md).
+          #   - license → the repo has no LICENSE yet; picking one is a maintainer decision.
+          #   - topics  → GitHub repo topics are a discoverability nicety, not a validity check.
+          # The integration's *actual* validity (manifest, deps, translations) is enforced by the
+          # hassfest job above; this job still runs HACS's structural checks.
+          ignore: brands license topics
