@@ -22,6 +22,7 @@ from .const import (
     CONF_CUSTOM_UNIT,
     CONF_INTERVAL,
     CONF_PRESET_DISABLED,
+    CONF_PRESET_EXCLUDED,
     CONF_PRESETS_ENABLED,
     CONF_TOKEN,
     CONF_USER_ID,
@@ -94,9 +95,10 @@ class SesharoOptionsFlow(config_entries.OptionsFlow):
         self._options: dict[str, Any] = {
             CONF_INTERVAL: opts.get(CONF_INTERVAL, DEFAULT_INTERVAL),
             CONF_PRESETS_ENABLED: opts.get(CONF_PRESETS_ENABLED, True),
-            # Carried through untouched — the per-preset toggles are managed by the panel, and the
-            # old menu flow must not silently drop them when the user saves from here.
+            # Carried through untouched — the per-preset toggles and per-entity exclusions are
+            # managed by the panel, and the old menu flow must not silently drop them on save.
             CONF_PRESET_DISABLED: list(opts.get(CONF_PRESET_DISABLED, []) or []),
+            CONF_PRESET_EXCLUDED: list(opts.get(CONF_PRESET_EXCLUDED, []) or []),
             CONF_CUSTOM: [dict(c) for c in opts.get(CONF_CUSTOM, [])],
         }
         # The entity picked in add_mapping step 1, carried into the pre-filled step 2.

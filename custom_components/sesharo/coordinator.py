@@ -38,6 +38,7 @@ from .const import (
     CONF_CUSTOM_UNIT,
     CONF_INTERVAL,
     CONF_PRESET_DISABLED,
+    CONF_PRESET_EXCLUDED,
     CONF_PRESETS_ENABLED,
     DEFAULT_INTERVAL,
     KIND_METRIC,
@@ -69,6 +70,8 @@ class SesharoPusher:
             target[entry[CONF_CUSTOM_ENTITY]] = entry
         self._presets_enabled = options.get(CONF_PRESETS_ENABLED, True)
         self._preset_disabled: set[str] = set(options.get(CONF_PRESET_DISABLED, []) or [])
+        # Individual preset-matched entities the user opted out of (preset stays on for the rest).
+        self._preset_excluded: set[str] = set(options.get(CONF_PRESET_EXCLUDED, []) or [])
         self._interval = timedelta(
             seconds=int(self._options.get(CONF_INTERVAL, DEFAULT_INTERVAL))
         )
@@ -113,6 +116,8 @@ class SesharoPusher:
                 custom.get(CONF_CUSTOM_NAME),
                 True,
             )
+        if state.entity_id in self._preset_excluded:
+            return None  # preset stays on for its class, but this entity was opted out
         device_class = state.attributes.get(ATTR_DEVICE_CLASS)
         if self._preset_active(device_class):
             preset = PRESET_METRICS.get(device_class)
@@ -125,6 +130,8 @@ class SesharoPusher:
         custom = self._custom_event.get(entity_id)
         if custom is not None:
             return custom[CONF_CUSTOM_SIGNAL]
+        if entity_id in self._preset_excluded:
+            return None  # preset stays on for its class, but this entity was opted out
         if entity_id.startswith("person."):
             return PERSON_EVENT_CATEGORY if self._preset_active(_PRESENCE_DEVICE_CLASS) else None
         device_class = state.attributes.get(ATTR_DEVICE_CLASS)

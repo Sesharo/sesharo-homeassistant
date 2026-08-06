@@ -13,6 +13,11 @@ CONF_PRESETS_ENABLED = "presets_enabled"  # master switch for all presets
 # master switch is on (finer-grained than the single boolean, driven by the panel's per-row
 # switches). A preset is active iff the master switch is on AND its device_class is not listed here.
 CONF_PRESET_DISABLED = "preset_disabled"
+# Per-entity preset opt-out: a list of individual `entity_id`s the user excluded from an *otherwise
+# enabled* preset (e.g. keep the temperature preset on but stop sending a noisy freezer probe). Finer
+# still than CONF_PRESET_DISABLED — a preset-matched entity is sent iff its class isn't disabled AND
+# the entity isn't in this list. Custom mappings are unaffected (they're explicit intent).
+CONF_PRESET_EXCLUDED = "preset_excluded"
 CONF_CUSTOM = "custom"  # list of custom entity mappings (see below)
 
 # A custom mapping entry (in options[CONF_CUSTOM]):

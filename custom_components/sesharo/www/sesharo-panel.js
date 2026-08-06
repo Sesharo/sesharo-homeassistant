@@ -82,12 +82,13 @@ class SesharoPanel extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this._hass = null;
-    this._config = null; // {interval, presets_enabled, preset_disabled, mappings, presets}
+    this._config = null; // {interval, presets_enabled, preset_disabled, preset_excluded, mappings, presets}
     this._status = null;
     this._signals = null; // {metrics:[], events:[]}
     this._suggestions = null; // [candidate,…]
     this._editing = null; // inline add/edit row state
     this._selectedSuggestions = new Set();
+    this._expandedPresets = new Set(); // preset signals whose per-sensor list is open
     this._error = null;
     this._loaded = false;
     this._statusTimer = null;
@@ -183,6 +184,13 @@ class SesharoPanel extends HTMLElement {
     setTimeout(() => this._refreshStatus(), 1500);
   }
 
+  async _savePresetExcluded(excluded) {
+    await this._ws("sesharo/set_preset_excluded", { preset_excluded: excluded });
+    this._config.preset_excluded = excluded;
+    this._render();
+    setTimeout(() => this._refreshStatus(), 1500);
+  }
+
   async _pushNow(btn) {
     if (btn) btn.setAttribute("loading", "");
     try {
@@ -229,6 +237,25 @@ class SesharoPanel extends HTMLElement {
   _presetEnabled(preset) {
     if (!this._config.presets_enabled) return false;
     return !(this._config.preset_disabled || []).includes(preset.device_class);
+  }
+
+  _isExcluded(entityId) {
+    return (this._config.preset_excluded || []).includes(entityId);
+  }
+
+  // Toggle whether a single preset-matched entity is sent (checked = sent). The preset stays on for
+  // the rest of its class; excluded entities go into preset_excluded.
+  _toggleEntityExclusion(entityId, included) {
+    const excluded = new Set(this._config.preset_excluded || []);
+    if (included) excluded.delete(entityId);
+    else excluded.add(entityId);
+    this._savePresetExcluded([...excluded]);
+  }
+
+  _togglePresetExpand(signal) {
+    if (this._expandedPresets.has(signal)) this._expandedPresets.delete(signal);
+    else this._expandedPresets.add(signal);
+    this._render();
   }
 
   // ── render ─────────────────────────────────────────────────────────────
@@ -893,7 +920,7 @@ class SesharoPanel extends HTMLElement {
           "div",
           {},
           el("div", { class: "card-title small" }, "Presets"),
-          el("div", { class: "card-sub" }, "Matched by device class, no setup needed.")
+          el("div", { class: "card-sub" }, "Matched by device class. Expand one to pick which sensors send.")
         ),
         master
       )
@@ -903,8 +930,32 @@ class SesharoPanel extends HTMLElement {
     for (const p of cfg.presets || []) {
       const matched = this._presetMatches(p);
       const enabled = this._presetEnabled(p);
+      const excludedCount = matched.filter((s) => this._isExcluded(s.entity_id)).length;
+      const sentCount = matched.length - excludedCount;
+      // Only an enabled preset with >1 sensor is worth drilling into — one sensor is just its switch.
+      const expandable = enabled && matched.length > 1;
+      const open = this._expandedPresets.has(p.signal);
+
+      const countText =
+        excludedCount > 0
+          ? `${sentCount} of ${matched.length} sensor${matched.length === 1 ? "" : "s"}`
+          : `${matched.length} sensor${matched.length === 1 ? "" : "s"}`;
+
       const sw = el("ha-switch", { ".checked": enabled, disabled: cfg.presets_enabled ? null : "" });
       sw.addEventListener("change", (ev) => this._togglePreset(p, ev.target.checked));
+
+      const chevron = expandable
+        ? el(
+            "button",
+            {
+              class: "preset-expand",
+              title: open ? "Hide sensors" : "Choose sensors",
+              onclick: () => this._togglePresetExpand(p.signal),
+            },
+            el("ha-icon", { icon: open ? "mdi:chevron-up" : "mdi:chevron-down" })
+          )
+        : el("div", { class: "preset-expand-spacer" });
+
       rows.appendChild(
         el(
           "div",
@@ -914,15 +965,55 @@ class SesharoPanel extends HTMLElement {
             "div",
             { class: "preset-text" },
             el("div", { class: "preset-label" }, p.label),
-            el("div", { class: "mono preset-sig" }, `${p.signal} · ${matched.length} sensor${matched.length === 1 ? "" : "s"}`)
+            el("div", { class: "mono preset-sig" }, `${p.signal} · ${countText}`)
           ),
           el("div", { class: "preset-val" }, this._presetLiveValue(p, matched)),
+          chevron,
           sw
         )
       );
+      if (expandable && open) rows.appendChild(this._presetSensorList(p, matched));
     }
     card.appendChild(rows);
     return card;
+  }
+
+  // The per-sensor include/exclude checklist shown under an expanded preset. Every matched sensor is
+  // sent by default (checked); unchecking one drops just that sensor while the preset stays on.
+  _presetSensorList(preset, matched) {
+    const list = el("div", { class: "preset-sensors" });
+    const sorted = [...matched].sort((a, b) => {
+      const an = (a.attributes.friendly_name || a.entity_id).toLowerCase();
+      const bn = (b.attributes.friendly_name || b.entity_id).toLowerCase();
+      return an.localeCompare(bn);
+    });
+    for (const s of sorted) {
+      const included = !this._isExcluded(s.entity_id);
+      const friendly = s.attributes.friendly_name || s.entity_id;
+      const unit = s.attributes.unit_of_measurement || "";
+      const value = ["unknown", "unavailable", ""].includes(s.state)
+        ? "—"
+        : `${s.state}${unit ? " " + unit : ""}`;
+      const cb = el("ha-checkbox", { ".checked": included });
+      cb.addEventListener("change", (ev) =>
+        this._toggleEntityExclusion(s.entity_id, ev.target.checked)
+      );
+      list.appendChild(
+        el(
+          "div",
+          { class: included ? "sensor-row" : "sensor-row excluded" },
+          cb,
+          el(
+            "div",
+            { class: "sensor-text" },
+            el("div", { class: "sensor-name" }, friendly),
+            el("div", { class: "mono sensor-id" }, s.entity_id)
+          ),
+          el("div", { class: "sensor-val" }, value)
+        )
+      );
+    }
+    return list;
   }
 
   _togglePreset(preset, on) {
@@ -1216,11 +1307,24 @@ class SesharoPanel extends HTMLElement {
 
       /* presets */
       .preset-rows.off { opacity: .45; pointer-events: none; }
-      .preset-row { display: grid; grid-template-columns: 20px 1fr auto auto; gap: 12px; align-items: center; min-height: 48px; padding: 8px 16px; border-top: 1px solid var(--divider-color); }
+      .preset-row { display: grid; grid-template-columns: 20px 1fr auto 32px auto; gap: 12px; align-items: center; min-height: 48px; padding: 8px 16px; border-top: 1px solid var(--divider-color); }
       .preset-ic { --mdc-icon-size: 20px; color: var(--secondary-text-color); }
       .preset-label { font-size: 14px; color: var(--primary-text-color); }
       .preset-sig { font-size: 12px; color: var(--secondary-text-color); }
       .preset-val { font-size: 14px; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
+      .preset-expand { border: none; background: none; cursor: pointer; color: var(--secondary-text-color); border-radius: 50%; width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; }
+      .preset-expand:hover { background: var(--ha-color-fill-neutral-quiet-resting, rgba(0,0,0,.06)); color: var(--primary-text-color); }
+      .preset-expand ha-icon { --mdc-icon-size: 20px; }
+      .preset-expand-spacer { width: 32px; }
+
+      /* preset per-sensor checklist */
+      .preset-sensors { padding: 4px 16px 10px 48px; background: var(--secondary-background-color); border-top: 1px solid var(--divider-color); }
+      .sensor-row { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; min-height: 40px; }
+      .sensor-text { min-width: 0; }
+      .sensor-name { font-size: 13px; color: var(--primary-text-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .sensor-id { font-size: 11px; color: var(--secondary-text-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .sensor-val { font-size: 13px; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
+      .sensor-row.excluded .sensor-name, .sensor-row.excluded .sensor-val { color: var(--secondary-text-color); text-decoration: line-through; opacity: .7; }
 
       /* suggestions */
       .suggest-row { display: flex; gap: 8px; align-items: center; min-height: 52px; padding: 4px 16px; border-top: 1px solid var(--divider-color); }

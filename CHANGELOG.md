@@ -4,6 +4,22 @@ All notable changes to the Sesharo Home Assistant integration. Versions match `m
 section for the current version is what `make release` publishes to GitHub Releases (and HACS renders
 as the update changelog).
 
+## v0.3.0 — Choose which sensors a preset sends
+
+Presets are matched by device class, so turning one on used to send **every** matching entity — all
+of your temperature sensors, including the noisy freezer probe you didn't want. Now you can keep a
+preset on and just drop the sensors you don't care about.
+
+### Added
+
+- **Per-sensor preset opt-out.** In the panel's *Presets* card, expand any enabled preset with more
+  than one sensor to see the individual entities it's sending. Every sensor is on by default; uncheck
+  one to stop sending just that entity while the preset stays on for the rest. The row count shows
+  "N of M sensors" when you've excluded some.
+- Persisted as a new `preset_excluded` option (a list of `entity_id`s), honoured by the pusher for
+  both metric and event presets and carried through the fallback options menu untouched. Backed by a
+  new admin-only `sesharo/set_preset_excluded` WebSocket command.
+
 ## v0.2.1 — Fix a panel hang that froze Home Assistant
 
 A **critical fix** for anyone on v0.2.0. Opening the panel's *add a mapping* entity suggestions could

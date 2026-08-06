@@ -32,6 +32,7 @@ from .const import (
     CONF_CUSTOM_UNIT,
     CONF_INTERVAL,
     CONF_PRESET_DISABLED,
+    CONF_PRESET_EXCLUDED,
     CONF_PRESETS_ENABLED,
     DEFAULT_INTERVAL,
     DOMAIN,
@@ -68,6 +69,7 @@ def async_register(hass: HomeAssistant) -> None:
         ws_suggestions,
         ws_set_settings,
         ws_set_presets,
+        ws_set_preset_excluded,
         ws_set_mappings,
         ws_push_now,
     ):
@@ -114,6 +116,7 @@ def ws_get_config(hass, connection, msg) -> None:
             "interval": opts.get(CONF_INTERVAL, DEFAULT_INTERVAL),
             "presets_enabled": opts.get(CONF_PRESETS_ENABLED, True),
             "preset_disabled": list(opts.get(CONF_PRESET_DISABLED, []) or []),
+            "preset_excluded": list(opts.get(CONF_PRESET_EXCLUDED, []) or []),
             "mappings": [dict(c) for c in opts.get(CONF_CUSTOM, []) or []],
             "presets": _presets_payload(),
         },
@@ -219,6 +222,29 @@ async def ws_set_presets(hass, connection, msg) -> None:
             CONF_PRESETS_ENABLED: bool(msg["presets_enabled"]),
             CONF_PRESET_DISABLED: list(dict.fromkeys(msg.get("preset_disabled", []))),
         },
+    )
+    connection.send_result(msg["id"], {"ok": True})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "sesharo/set_preset_excluded",
+        vol.Optional("entry_id"): str,
+        vol.Required("preset_excluded"): [str],
+    }
+)
+@websocket_api.async_response
+async def ws_set_preset_excluded(hass, connection, msg) -> None:
+    """Persist the per-entity preset opt-out list (keep a preset on, drop specific sensors)."""
+    entry, _ = _resolve(hass, msg)
+    if entry is None:
+        connection.send_error(msg["id"], "not_found", "No Sesharo integration configured")
+        return
+    await _update_options(
+        hass,
+        entry,
+        {CONF_PRESET_EXCLUDED: list(dict.fromkeys(msg.get("preset_excluded", [])))},
     )
     connection.send_result(msg["id"], {"ok": True})
 
